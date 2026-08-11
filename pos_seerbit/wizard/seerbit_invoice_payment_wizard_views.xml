@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_seerbit_invoice_payment_wizard_form" model="ir.ui.view">
+        <field name="name">seerbit.invoice.payment.wizard.form</field>
+        <field name="model">seerbit.invoice.payment.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Send Payment to POS Terminal">
+                <group>
+                    <field name="invoice_id" invisible="1"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="amount_due"/>
+                    <field name="pos_payment_method_id" options="{'no_create': True, 'no_open': True}"/>
+                </group>
+                <footer>
+                    <button name="action_confirm_payment" string="Send Payment" type="object" class="btn-primary" data-hotkey="q"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_seerbit_invoice_payment_wizard" model="ir.actions.act_window">
+        <field name="name">Send Payment to POS</field>
+        <field name="res_model">seerbit.invoice.payment.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

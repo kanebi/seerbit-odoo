@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_seerbit_payout_form" model="ir.ui.view">
+        <field name="name">seerbit.payout.form</field>
+        <field name="model">seerbit.payout</field>
+        <field name="arch" type="xml">
+            <form string="Payout">
+                <header>
+                    <button name="action_get_otp" type="object" string="Get OTP" class="oe_highlight" invisible="state != 'draft'"/>
+                    <button name="action_resend_otp" type="object" string="Resend OTP" invisible="state != 'pending_otp'"/>
+                    <button name="action_submit_payout" type="object" string="Submit OTP" class="oe_highlight" invisible="state != 'pending_otp'"/>
+                    <button name="action_reset_to_draft" type="object" string="Reset to Draft" invisible="state != 'pending_otp'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,pending_otp,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" type="object" name="action_view_payment" icon="fa-money" invisible="not payment_id">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Payment</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="partner_id" readonly="state != 'draft'" options="{'no_create': True}"/>
+                            <field name="move_id" readonly="state != 'draft'" options="{'no_create': True}" context="{'default_partner_id': partner_id, 'default_move_type': 'in_invoice'}"/>
+                            <field name="amount" readonly="state != 'draft'"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="partner_bank_id" readonly="state != 'draft'" invisible="not partner_id"/>
+                            <field name="is_trusted_bank" widget="boolean_toggle" readonly="1" invisible="not partner_bank_id"/>
+                            <field name="bank_name" widget="seerbit_bank_selection" readonly="state != 'draft'"/>
+                            <field name="bank_code" readonly="state != 'draft'" invisible="1"/>
+                            <field name="otp_code" invisible="state != 'pending_otp'"/>
+                        </group>
+                        <group>
+                            <field name="account_number" readonly="state != 'draft'"/>
+                            <field name="is_account_verified" invisible="1"/>
+                            <field name="verified_account_name" invisible="1"/>
+                            <label for="account_name"/>
+                            <div>
+                                <field name="account_name" widget="seerbit_account_name" readonly="1" force_save="1" nolabel="1"/>
+                            </div>
+                            <field name="description" readonly="state != 'draft'"/>
+                            <field name="payment_id" invisible="not payment_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_seerbit_payout_tree" model="ir.ui.view">
+        <field name="name">seerbit.payout.list</field>
+        <field name="model">seerbit.payout</field>
+        <field name="arch" type="xml">
+            <list string="Payouts" decoration-info="state == 'draft'" decoration-warning="state == 'pending_otp'" decoration-success="state == 'completed'" decoration-danger="state == 'failed'">
+                <field name="name"/>
+                <field name="create_date"/>
+                <field name="bank_name"/>
+                <field name="account_name"/>
+                <field name="amount"/>
+                <field name="state" widget="badge" decoration-info="state == 'draft'" decoration-warning="state == 'pending_otp'" decoration-success="state == 'completed'" decoration-danger="state == 'failed'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_seerbit_payout" model="ir.actions.act_window">
+        <field name="name">Payouts</field>
+        <field name="res_model">seerbit.payout</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

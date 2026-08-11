@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_account_payment_form_inherit_seerbit_va" model="ir.ui.view">
+        <field name="name">account.payment.form.inherit.seerbit.va</field>
+        <field name="model">account.payment</field>
+        <field name="inherit_id" ref="account.view_account_payment_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='journal_id']" position="after">
+                <field name="seerbit_va_id" invisible="not seerbit_va_id"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_account_payment_tree_inherit_seerbit_va" model="ir.ui.view">
+        <field name="name">account.payment.tree.inherit.seerbit.va</field>
+        <field name="model">account.payment</field>
+        <field name="inherit_id" ref="account.view_account_payment_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='journal_id']" position="after">
+                <field name="seerbit_va_id" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+    
+    <record id="view_account_payment_search_inherit_seerbit_va" model="ir.ui.view">
+        <field name="name">account.payment.search.inherit.seerbit.va</field>
+        <field name="model">account.payment</field>
+        <field name="inherit_id" ref="account.view_account_payment_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <filter string="Virtual Account" name="groupby_seerbit_va_id" domain="[]" context="{'group_by': 'seerbit_va_id'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

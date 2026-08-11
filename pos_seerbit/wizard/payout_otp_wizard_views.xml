@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_seerbit_payout_otp_wizard_form" model="ir.ui.view">
+        <field name="name">seerbit.payout.otp.wizard.form</field>
+        <field name="model">seerbit.payout.otp.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Enter OTP">
+                <group>
+                    <field name="payout_id" invisible="1"/>
+                    <field name="otp" placeholder="e.g. 123456"/>
+                </group>
+                <footer>
+                    <button string="Submit Payout" name="action_confirm" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

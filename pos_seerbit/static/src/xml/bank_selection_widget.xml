@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="pos_seerbit.BankSelectionWidget" owl="1">
+        <t t-if="props.readonly">
+            <span t-esc="props.record.data[props.name] || ''"/>
+        </t>
+        <t t-else="">
+            <div class="d-flex align-items-center w-100">
+                <t t-if="state.loading">
+                    <div class="d-flex align-items-center w-100 p-2 border rounded bg-light text-muted">
+                        <i class="fa fa-circle-o-notch fa-spin me-2"></i>
+                        <span>Loading Banks...</span>
+                    </div>
+                </t>
+                <t t-elif="state.error">
+                    <div class="d-flex align-items-center w-100 p-2 border border-danger rounded text-danger">
+                        <i class="fa fa-exclamation-triangle me-2"></i>
+                        <span>Failed to load banks. <a href="#" t-on-click="loadBanks" class="fw-bold">Retry</a></span>
+                    </div>
+                </t>
+                <t t-else="">
+                    <select class="o_input" t-on-change="onChange">
+                        <option value="">Select a Bank...</option>
+                        <t t-foreach="state.banks" t-as="bank" t-key="bank.bankCode">
+                            <option t-att-value="bank.bankCode" t-att-selected="selectedValue === bank.bankCode">
+                                <t t-esc="bank.bankName"/>
+                            </option>
+                        </t>
+                    </select>
+                </t>
+            </div>
+        </t>
+    </t>
+</templates>

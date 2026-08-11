@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+    <t t-name="pos_seerbit.InvoicePaymentListener">
+        <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); z-index: 999999;">
+            <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center bg-view shadow-lg animate__animated animate__fadeInUp" style="max-width: 400px; background: #ffffff; color: #212529; font-family: 'Inter', sans-serif; border-radius: 12px !important; box-shadow: 0 10px 30px rgba(0,0,0,0.15) !important;">
+                
+                <style>
+                    @keyframes ping {
+                        0% { transform: scale(1); opacity: 0.35; }
+                        70%, 100% { transform: scale(2.2); opacity: 0; }
+                    }
+                    @keyframes bounceIn {
+                        from, 20%, 40%, 60%, 80%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1); }
+                        0% { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+                        20% { transform: scale3d(1.1, 1.1, 1.1); }
+                        40% { transform: scale3d(0.9, 0.9, 0.9); }
+                        60% { opacity: 1; transform: scale3d(1.03, 1.03, 1.03); }
+                        80% { transform: scale3d(0.97, 0.97, 0.97); }
+                        to { opacity: 1; transform: scale3d(1, 1, 1); }
+                    }
+                    @keyframes shakeX {
+                        from, to { transform: translate3d(0, 0, 0); }
+                        10%, 30%, 50%, 70%, 90% { transform: translate3d(-10px, 0, 0); }
+                        20%, 40%, 60%, 80% { transform: translate3d(10px, 0, 0); }
+                    }
+                    .animate-ping-custom { animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+                    .animate-bounce-custom { animation: bounceIn 0.8s both; }
+                    .animate-shake-custom { animation: shakeX 0.6s both; }
+                    
+                    .seerbit-outline-btn {
+                        color: #F02800 !important;
+                        border: 1px solid #F02800 !important;
+                        background: transparent !important;
+                        font-weight: 500;
+                        font-size: 1rem;
+                        border-radius: 8px;
+                        transition: all 0.2s ease;
+                        position: relative;
+                        z-index: 1000000;
+                        pointer-events: auto;
+                    }
+                    .seerbit-outline-btn:hover {
+                        background: rgba(240, 40, 0, 0.05) !important;
+                    }
+                    .seerbit-filled-btn {
+                        background: #F02800 !important;
+                        color: #ffffff !important;
+                        border: none !important;
+                        font-weight: 500;
+                        font-size: 1rem;
+                        border-radius: 8px;
+                        transition: all 0.2s ease;
+                        position: relative;
+                        z-index: 1000000;
+                        pointer-events: auto;
+                    }
+                    .seerbit-filled-btn:hover {
+                        background: #d02200 !important;
+                    }
+                </style>
+
+                <!-- Icon on top -->
+                <img src="/pos_seerbit/static/description/icon.png" alt="Seerbit Logo" class="mb-4" style="width: 60px; height: 60px; object-fit: contain; border-radius: 8px;" />
+
+                <div class="mb-4">
+                    <t t-if="state.status === 'waiting'">
+                        <!-- Pulse Loader -->
+                        <div class="position-relative d-flex align-items-center justify-content-center" style="width: 80px; height: 80px;">
+                            <div class="position-absolute rounded-circle animate-ping-custom" style="width: 100%; height: 100%; background: #F02800; opacity: 0.15;"></div>
+                            <div class="position-absolute rounded-circle animate-ping-custom" style="width: 75%; height: 75%; background: #F02800; opacity: 0.25; animation-delay: 0.6s;"></div>
+                            <div class="position-relative rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 50px; height: 50px; background: #ffffff; border: 1px solid #e0e0e0;">
+                                <i class="fa fa-refresh fa-spin fa-lg" style="color: #F02800;"></i>
+                            </div>
+                        </div>
+                    </t>
+                    <t t-elif="state.status === 'success'">
+                        <!-- Success Animation -->
+                        <div class="rounded-circle d-flex align-items-center justify-content-center shadow-sm animate-bounce-custom" style="width: 60px; height: 60px; background: #ffffff; border: 2px solid #28a745;">
+                            <i class="fa fa-check fa-2x" style="color: #28a745;"></i>
+                        </div>
+                    </t>
+                    <t t-elif="state.status === 'error'">
+                        <!-- Error Animation -->
+                        <div class="rounded-circle d-flex align-items-center justify-content-center shadow-sm animate-shake-custom" style="width: 60px; height: 60px; background: #ffffff; border: 2px solid #dc3545;">
+                            <i class="fa fa-times fa-2x" style="color: #dc3545;"></i>
+                        </div>
+                    </t>
+                </div>
+                
+                <h4 class="fw-bold mb-2" style="color: #212529; font-size: 1.25rem;">
+                    Seerbit POS Payment
+                </h4>
+                
+                <div class="mb-4 w-100 text-muted">
+                    <p class="mb-0" style="font-size: 0.95rem;">
+                        <t t-out="state.message"/>
+                    </p>
+                </div>
+                
+                <t t-if="state.status === 'waiting'">
+                    <button class="btn w-100 py-2 mb-2 seerbit-outline-btn" t-on-click="onResend">
+                        <i class="oi oi-sync me-2"/> Resend Payment
+                    </button>
+                </t>
+                
+                <button class="btn w-100 py-2 seerbit-filled-btn" t-on-click="onCancel">
+                    Cancel Payment
+                </button>
+            </div>
+        </div>
+    </t>
+</templates>

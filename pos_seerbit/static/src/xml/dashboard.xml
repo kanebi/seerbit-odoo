@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="pos_seerbit.SeerbitDashboard" owl="1">
+        <div class="o_action_manager overflow-auto h-100 bg-100">
+            <div class="container-fluid py-4" t-if="!state.loading">
+                <div class="row mb-4">
+                    <div class="col-12 d-flex justify-content-between align-items-center">
+                        <div>
+                            <img src="/pos_seerbit/static/description/seerbit_logo.png" style="height: 38px;" alt="Seerbit Logo"/>
+                            <br/>
+                            <small class="text-muted">Merchant Dashboard</small>
+                        </div>
+                        <button class="btn btn-secondary" t-on-click="refresh">
+                            <i class="fa fa-refresh mr-2"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="row">
+                    <!-- Left Column (65%) -->
+                    <div class="col-md-8">
+                        <!-- Row 1: Platform Balance -->
+                        <div class="card mb-4 shadow-sm border-0 rounded-lg" style="border-left: 4px solid #EB3E25 !important;">
+                            <div class="card-body p-5 text-center bg-white rounded-lg">
+                                <div class="d-flex justify-content-between mb-3 w-100">
+                                    <h4 class="text-muted text-uppercase fw-bold m-0">Seerbit Pocket Balance</h4>
+                                    <a href="https://dashboard.seerbit.com" target="_blank" class="text-decoration-none fw-bold">Open Merchant Dashboard <i class="fa fa-external-link"></i></a>
+                                </div>
+                                <div class="d-flex align-items-center justify-content-center mb-4">
+                                    <t t-if="state.loading_pocket">
+                                        <i class="fa fa-circle-o-notch fa-spin fa-2x text-muted me-2"></i>
+                                        <h2 class="text-muted m-0">Loading...</h2>
+                                    </t>
+                                    <t t-else="">
+                                        <h1 class="display-3 fw-bold text-dark m-0">
+                                            <t t-esc="state.currency_symbol"/><t t-esc="state.platform_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})"/>
+                                        </h1>
+                                        <t t-if="!state.needs_reconciliation">
+                                            <div class="text-success fw-bold ms-4 mt-2">
+                                                (Synced)
+                                            </div>
+                                        </t>
+                                    </t>
+                                </div>
+                                <div class="d-flex justify-content-center gap-3">
+                                    <button class="btn px-4 mx-2" style="background-color: #EB3E25; border-color: #EB3E25; color: white;" t-on-click="openPayouts">
+                                        <i class="fa fa-money"></i> Payout
+                                    </button>
+                                    <button class="btn btn-outline-secondary px-4 mx-2" style="color: #EB3E25; border-color: #EB3E25;" t-on-click="openReconcile">
+                                        <i class="fa fa-exchange"></i> Reconcile
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Row 2: Odoo Balance -->
+                        <div class="card shadow-sm border-0 rounded-lg" style="border-left: 4px solid #EB3E25 !important;">
+                            <div class="card-body p-5 text-center bg-white rounded-lg">
+                                <div class="d-flex justify-content-between mb-3 w-100 align-items-center">
+                                    <div class="d-flex align-items-center">
+                                        <h4 class="text-muted text-uppercase fw-bold m-0 me-3">Odoo Seerbit Account Balance</h4>
+                                    </div>
+                                    <a href="#" t-on-click="openSeerbitEntries" class="text-decoration-none fw-bold">View Seerbit Entries <i class="fa fa-arrow-right"></i></a>
+                                </div>
+                                <h1 class="display-3 fw-bold text-primary m-0">
+                                    <t t-esc="state.currency_symbol"/><t t-esc="state.odoo_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})"/>
+                                </h1>
+                                <div class="d-flex justify-content-end mt-3">
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" id="filter24h" t-att-checked="state.filter_24h" t-on-change="toggleFilter24h"/>
+                                        <label class="form-check-label small text-muted" for="filter24h">24Hrs Only</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Column (35%) -->
+                    <div class="col-md-4">
+                        <div class="card shadow-sm border-0 rounded-lg bg-white" style="height: 100vh; overflow-y: auto; border-left: 4px solid #EB3E25 !important;">
+                            <div class="card-header bg-white border-bottom-0 pt-4 pb-0 position-sticky top-0 z-1 d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0 text-muted text-uppercase fw-bold">Recent Payments</h5>
+                                <a href="#" t-on-click="openAllTransactions" class="text-decoration-none fw-bold text-primary">View All <i class="fa fa-arrow-right ms-1"></i></a>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="list-group list-group-flush mt-3">
+                                    <t t-if="state.recent_transactions.length === 0">
+                                        <div class="p-4 text-center text-muted">
+                                            No recent transactions found.
+                                        </div>
+                                    </t>
+                                    <t t-foreach="state.recent_transactions" t-as="tx" t-key="tx.id">
+                                        <div class="list-group-item d-flex justify-content-between align-items-center py-3 border-bottom" style="cursor: pointer;" t-on-click="() => this.openTransaction(tx.id)">
+                                            <div>
+                                                <div class="fw-bold"><t t-esc="tx.name"/></div>
+                                                <div class="small text-muted"><t t-esc="tx.date"/> <t t-if="tx.partner">- <t t-esc="tx.partner"/></t></div>
+                                                <t t-if="!tx.is_reconciled and tx.state !== 'cancel'">
+                                                </t>
+                                            </div>
+                                            <div class="text-end" style="text-align: right;">
+                                                <div t-attf-class="{{ tx.payment_type === 'inbound' ? 'text-success' : 'text-danger' }} fw-bold">
+                                                    <t t-if="tx.payment_type === 'inbound'">+</t><t t-else="">-</t>
+                                                    <t t-esc="state.currency_symbol"/><t t-esc="tx.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})"/>
+                                                </div>
+                                                <span t-attf-class="badge rounded-pill {{ tx.state === 'posted' ? 'bg-success text-white' : 'bg-secondary text-white' }}">
+                                                    <t t-esc="tx.state"/>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container-fluid p-5 text-center d-flex flex-column align-items-center justify-content-center h-100" t-if="state.loading">
+                <i class="fa fa-spinner fa-spin fa-3x text-primary"></i>
+                <h4 class="mt-3 text-muted">Loading Dashboard...</h4>
+            </div>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,116 @@
+// Seerbit POS Styling for Odoo 18+
+
+$seerbit-danger: #CC5500;
+$seerbit-danger-dark: #a13e00;
+$seerbit-success: #27ae60;
+$seerbit-error: #e74c3c;
+$seerbit-waiting: #f39c12;
+$seerbit-border-radius: 0.5rem;
+$seerbit-shadow: 0 2px 8px rgba(0,0,0,0.08);
+$seerbit-transition: all 0.15s cubic-bezier(0.4,0,0.2,1);
+
+.button.dangerous {
+    text-align: center;
+    padding: 1rem 2rem;
+    background: $seerbit-danger;
+    border: solid 1px $seerbit-danger;
+    color: #fff;
+    border-radius: $seerbit-border-radius;
+    box-shadow: $seerbit-shadow;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: $seerbit-transition;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    outline: none;
+
+    &:hover, &:focus {
+        background: $seerbit-danger-dark;
+        border-color: $seerbit-danger-dark;
+        box-shadow: 0 4px 16px rgba(204,85,0,0.15);
+    }
+    &:active {
+        background: darken($seerbit-danger, 10%);
+    }
+}
+
+.button.send_payment_request {
+    background: $seerbit-success;
+    border: solid 1px $seerbit-success;
+    color: #fff;
+    border-radius: $seerbit-border-radius;
+    box-shadow: $seerbit-shadow;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: $seerbit-transition;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    outline: none;
+    margin-left: 0.5em;
+
+    &:hover, &:focus {
+        background: darken($seerbit-success, 10%);
+        border-color: darken($seerbit-success, 10%);
+        box-shadow: 0 4px 16px rgba(39,174,96,0.12);
+    }
+    &:active {
+        background: darken($seerbit-success, 15%);
+    }
+}
+
+.electronic_status {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin-bottom: 0.5em;
+    padding: 0.5em 0.75em;
+    border-radius: $seerbit-border-radius;
+    margin-top:10px;
+    box-shadow: $seerbit-shadow;
+    &.waiting {
+        background: $seerbit-waiting;
+        color: #fff;
+    }
+    &.error {
+        background: $seerbit-error;
+        color: #fff;
+    }
+}
+
+// Icon support (FontAwesome or SVG)
+.button .fa, .button .seerbit-icon {
+    font-size: 1.2em;
+    margin-right: 0.4em;
+    vertical-align: middle;
+}
+
+// Responsive tweaks
+@media (max-width: 600px) {
+    .button.dangerous, .button.send_payment_request {
+        font-size: 1rem;
+        padding: 0.7rem 1.2rem;
+    }
+    .electronic_status {
+        font-size: 0.98rem;
+        padding: 0.4em 0.5em;
+    }
+}
+
+.seerbit-buttons{
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;    
+}

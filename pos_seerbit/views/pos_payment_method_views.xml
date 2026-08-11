@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="pos_payment_method_view_form_inherit_pos_seerbit" model="ir.ui.view">
+        <field name="name">pos.payment.method.form.inherit.seerbit</field>
+        <field name="model">pos.payment.method</field>
+        <field name="inherit_id" ref="point_of_sale.pos_payment_method_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='use_payment_terminal']" position="after">
+                <!-- Seerbit -->
+                <field name="seerbit_public_key" invisible="use_payment_terminal != 'seerbit'" readonly="1"/>
+                <field name="seerbit_terminal_id" invisible="use_payment_terminal != 'seerbit'" required="use_payment_terminal == 'seerbit'"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

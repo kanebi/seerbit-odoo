@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_pos_seerbit_payment_link_list" model="ir.ui.view">
+        <field name="name">pos_seerbit.payment.link.list</field>
+        <field name="model">pos_seerbit.payment.link</field>
+        <field name="arch" type="xml">
+            <list string="Payment Links">
+                <field name="create_date"/>
+                <field name="name"/>
+                <field name="move_id"/>
+                <field name="amount"/>
+                <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-info="state == 'pending'"/>
+                <field name="link_url" widget="url"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pos_seerbit_payment_link_form" model="ir.ui.view">
+        <field name="name">pos_seerbit.payment.link.form</field>
+        <field name="model">pos_seerbit.payment.link</field>
+        <field name="arch" type="xml">
+            <form string="Payment Link">
+                <header>
+                    <button name="action_send_link" type="object" string="Send Link" class="oe_highlight"/>
+                    <button name="action_open_link" type="object" string="Open Link" class="btn-secondary"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_payments" type="object" class="oe_stat_button" icon="fa-money">
+                            <field name="payment_count" widget="statinfo" string="Payments"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="move_id" readonly="state == 'paid'" domain="[('move_type', 'in', ('out_invoice', 'out_refund'))]" context="{'default_move_type': 'out_invoice'}"/>
+                            <field name="partner_id" readonly="state == 'paid'"/>
+                            <field name="email" readonly="state == 'paid'"/>
+                            <field name="amount" readonly="state == 'paid'"/>
+                            <field name="currency_id" readonly="state == 'paid'"/>
+                            <field name="description" readonly="state == 'paid'"/>
+                        </group>
+                        <group>
+                            <field name="link_url" widget="CopyClipboardChar" readonly="1"/>
+                            <field name="seerbit_link_id" readonly="1"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_seerbit_payment_link" model="ir.actions.act_window">
+        <field name="name">Payment Links</field>
+        <field name="res_model">pos_seerbit.payment.link</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No Payment Links Found
+            </p>
+            <p>
+                Create an invoice and generate a Seerbit Payment Link for your customer.
+            </p>
+        </field>
+    </record>
+</odoo>

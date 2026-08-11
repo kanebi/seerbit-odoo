@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="res_config_settings_view_form" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.inherit.pos.seerbit</field>
+            <field name="model">res.config.settings</field>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//form" position="inside">
+                    <app string="Seerbit" name="pos_seerbit">
+                        <block title="Seerbit Configuration" name="seerbit_config">
+                            <setting string="Enable Seerbit Payment Terminal">
+                                <field name="module_pos_seerbit"/>
+                                <div class="text-muted">
+                                    Enable Seerbit payment terminal integration.
+                                </div>
+                            </setting>
+                            <setting string="Automatically Post Payments" invisible="not module_pos_seerbit">
+                                <field name="seerbit_auto_post"/>
+                                <div class="text-muted">
+                                    Automatically post Seerbit payments to the ledger when received.
+                                </div>
+                            </setting>
+                            <setting string="Automatic Reconciliation" invisible="not module_pos_seerbit or not seerbit_auto_post">
+                                <field name="seerbit_auto_reconcile"/>
+                                <div class="text-muted">
+                                    Automatically reconcile Seerbit payments with invoices when payment is received.
+                                </div>
+                            </setting>
+                            <setting string="Seerbit Public Key" invisible="not module_pos_seerbit">
+                                <field name="seerbit_public_key" placeholder="YOUR_PUBLIC_KEY"/>
+                            </setting>
+                            <setting string="Seerbit Secret Key" invisible="not module_pos_seerbit">
+                                <field name="seerbit_secret_key" placeholder="YOUR_SECRET_KEY"/>
+                            </setting>
+                            <setting string="Seerbit Pocket ID" invisible="not module_pos_seerbit">
+                                <field name="seerbit_pocket_id" placeholder="SBP..."/>
+                            </setting>
+                            <setting string="Seerbit Pocket Email" invisible="not module_pos_seerbit">
+                                <field name="seerbit_pocket_email" placeholder="merchant@domain.com"/>
+                            </setting>
+                            <setting string="Seerbit Pocket Password" invisible="not module_pos_seerbit">
+                                <field name="seerbit_pocket_password" placeholder="••••••••" password="True"/>
+                            </setting>
+                            <setting string="Seerbit Firebase API Key" invisible="not module_pos_seerbit">
+                                <field name="seerbit_firebase_api_key" placeholder="AIzaSy..."/>
+                            </setting>
+                            <setting string="Seerbit Firestore Project ID" invisible="not module_pos_seerbit">
+                                <field name="seerbit_firestore_project_id" placeholder="your-project-id"/>
+                            </setting>
+                            <setting string="Seerbit Firestore Service Account JSON" invisible="not module_pos_seerbit">
+                                <field name="seerbit_firestore_cred" widget="text" placeholder='{"type": "service_account", "project_id": "..."}'/>
+                                <div class="text-muted mt8">
+                                    Paste the entire content of your Firestore service account JSON file here.
+                                </div>
+                            </setting>
+                        </block>
+                    </app>
+                </xpath>
+            </field>
+        </record>
+    </data>
+
+    <record id="action_pos_seerbit_config_settings" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module' : 'pos_seerbit', 'bin_size': False}</field>
+    </record>
+    
+</odoo>

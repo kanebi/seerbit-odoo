@@ -1,0 +1,12 @@
+# Seerbit Odoo POS Integration Dependencies
+# Compatible with Odoo 16 and Odoo.sh environment
+
+# Firebase/Firestore Dependencies
+firebase-admin>=2.0.0
+google-cloud-firestore>=2.0.0
+google-auth>=2.0.0
+
+# Additional Google Cloud dependencies (optional but recommended)
+google-cloud-core>=2.0.0
+google-api-core>=2.0.0
+

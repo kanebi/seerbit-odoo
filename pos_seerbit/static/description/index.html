@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Seerbit Odoo POS</title>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+</head>
+
+<body>
+    <font size="+1">
+    <!-- Header -->
+    <div class="container">
+        <div class="row">
+            <div class="col-12 d-flex pt-2 justify-content-between">
+                <div class="d-flex align-items-center">
+                    <img src="./icon.png" alt="Banner" style="height: 40px;" />
+                </div>
+                <div class="d-flex align-items-center">
+                    <div class="px-2 py-2 font-weight-bold text-white rounded" style="background-color: #7C7BAD">
+                        <i class="fa fa-check mr-1"></i>Community
+                    </div>
+                    <div class=" ml-2 px-2 py-2 font-weight-bold text-white rounded" style="background-color: #875A7B">
+                        <i class="fa fa-check mr-1"></i>Enterprise
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Area -->
+    <div class="container mt-3">
+        <div class="row">
+            <!-- Table of Content Sidebar-->
+            <div class="col-lg-3 mt-2">
+                <div class="sticky-top" role="navigation">
+                    <div class="card-header" id="table-of-content">
+                        <div class="row " data-toggle="collapse" data-target="#content" aria-expanded="true"
+                            aria-controls="collapseOne">
+                            <div class="col-10">
+                                <h5 class="text-danger">Table of Content</h5>
+                            </div>
+                            <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                <i class="fa fa-chevron-right text-danger"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="content" class="collapse show" aria-labelledby="table-of-content">
+                        <div class="">
+                            <div class="list-group">
+                                <a href="#about" class="list-group-item list-group-item-action">About</a>
+                                <a href="#setup" class="list-group-item list-group-item-action">Setting Up</a>
+                                <a href="#autoconfirm" class="list-group-item list-group-item-action">
+                                    Automatic Confirmation
+                                </a>
+                                <a href="#autoflow" class="list-group-item list-group-item-action">
+                                    Automated Workflow
+                                </a>
+                                <a href="#history" class="list-group-item list-group-item-action">
+                                    Version History
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Sections-->
+            <div class="col-lg-9">
+                <!-- Banner -->
+                <div class="mt-2">
+                    <img class="card-img-top" src="./seerbit_logo.png" alt="Banner">
+                </div>
+                <!-- Content -->
+                <div id="accordion" class="row pt-2">
+                    <!-- About -->
+                    <div class="col-12 mt-2 ">
+                        <div class="card-header" id="about">
+                            <div class="row " data-toggle="collapse" data-target="#about_id" aria-expanded="true"
+                                aria-controls="about_id">
+                                <div class="col-10">
+                                    <h5 class="text-danger">About</h5>
+                                </div>
+                                <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                    <i class="fa fa-chevron-right text-danger"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="about_id" class="show" aria-labelledby="about" data-parent="#accordion">
+                            <div class="card-body">
+                                Seerbit provides the first universal (transfer, USSD, and card) payment integration with
+                                Odoo for both community and enterprise editions. It automates payment confirmation for
+                                all transactions by listening for responses from Seerbit's webhook.
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Setup -->
+                    <div class="col-12 mt-2">
+                        <div class="card-header" id="setup">
+                            <div class="row" data-toggle="collapse" data-target="#setup_id" aria-expanded="true"
+                                aria-controls="setup_id">
+                                <div class="col-10">
+                                    <h5 class="text-danger">Manual Setup</h5>
+                                </div>
+                                <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                    <i class="fa fa-chevron-right text-danger"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="setup_id" class="show" aria-labelledby="setup" data-parent="#accordion">
+                            <div class="card-body">
+                                <img class="card-img-top" src="./seerbit_manual_setup.gif" alt="Banner">
+                                <ul>
+                                    <li>
+                                        <strong>Install the module:</strong><br />
+                                        Installing the pos_seerbit module automatically creates:
+                                        <ul>
+                                            <li>
+                                                Seerbit journal of type bank, this can be seen and edited by going to
+                                                <code>Invoicing/Accounting >> Configuration >> Journal</code>
+                                            </li>
+                                            <li>
+                                                Seerbit POS payment method.
+                                            </li>
+                                        </ul>
+                                        Activating this module automatically creates a payment method ready to be
+                                        used with by pos sessions, in a single company setup and where only one seerbit
+                                        account is in use or when its fine for multiple seerbit accounts entries to be
+                                        recorded on the same journal, the auto created payment method is sufficient. In
+                                        other scenarios, it may be desirable to edit the one that was automatically
+                                        created, use an existing one for Seerbit integration, or create a new payment
+                                        method, depending on the scenario.
+                                        <div class="alert alert-primary">
+                                            <p>
+                                                <strong>Note</strong>: Custom POS payment method must possess a journal
+                                                of type <i>Bank</i>
+                                            </p>
+                                        </div>
+                                    </li>
+                                    <li>
+                                        Go to <code>Settings >> POS</code> and select the point of sale(s) you want
+                                        the payment method to be associated with;
+                                    </li>
+                                    <li>
+                                        Go to payment method section and add <i>Seerbit POS</i>
+                                        (or a custom payment method).
+                                    </li>
+                                </ul>
+                                Now, you can start to manually accept payments as any other bank POS payment
+                                method.</br>
+                                If you would like to automate the payment confirmation process, please continue to the
+                                <a href="#autoconfirm">next section</a>.
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Autoconfirm -->
+                    <div class="col-12 mt-2">
+                        <div class="card-header" id="autoconfirm">
+                            <div class="row" data-toggle="collapse" data-target="#autoconfirm_id" aria-expanded="true"
+                                aria-controls="autoconfirm_id">
+                                <div class="col-10">
+                                    <h5 class="text-danger">Automatic Payment Confirmation</h5>
+                                </div>
+                                <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                    <i class="fa fa-chevron-right text-danger"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="autoconfirm_id" class="show" aria-labelledby="autoconfirm" data-parent="#accordion">
+                            <div class="card-body">
+                                <img class="card-img-top" src="./auto_setup.JPG" alt="Automatic Setup" />
+                                <ul>
+                                    <li>
+                                        Sign up or log in to your Seerbit dashboard.
+                                    </li>
+                                    <li>
+                                        On the Seerbit dashboard, go to <code>Settings >> Webhook</code> and set the
+                                        value to <code><i>yourodoourl.com</i>/pos_seerbit/notification</code>
+                                    </li>
+                                    <li>
+                                        Get your Seerbit public key by going to <code>Settings >> Security</code>.
+                                        API keys on the Seerbit dashboard</br>
+                                        Note: Use the test public key for testing purposes and the live one for
+                                        production (real payment).
+                                    </li>
+                                    <li>
+                                        On Odoo, go to Point of <code>Sale >> Settings >> Payment Methods</code> and
+                                        select <i>Seerbit Account</i> (or any other custom one you choose to use).
+                                    </li>
+                                    <li>
+                                        On the <i>Use Terminal</i> field, select Seerbit.
+                                    </li>
+                                    <li>
+                                        Paste your Seerbit public key.
+                                    </li>
+                                </ul>
+                                Your automated workflow has now been fully setup.
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Autoflow -->
+                    <div class="col-12 mt-2">
+                        <div class="card-header" id="autoflow">
+                            <div class="row" data-toggle="collapse" data-target="#autoflow_id" aria-expanded="true"
+                                aria-controls="autoflow_id">
+                                <div class="col-10">
+                                    <h5 class="text-danger">Automated Workflow</h5>
+                                </div>
+                                <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                    <i class="fa fa-chevron-right text-danger"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="autoflow_id" class="show" aria-labelledby="autoflow" data-parent="#accordion">
+                            <div class="card-body">
+                                <img class="card-img-top" src="./auto_flow.gif" alt="Automatic Flow" />
+                                <ul>
+                                    <li>
+                                        Select the desired items and click the Pay button
+                                    </li>
+                                    <li>
+                                        Select Seerbit Payment. The system assumes the total cart value will be paid;
+                                        in the event of multiple means of payment, kindly change the displayed figure.
+                                    </li>
+                                    <li>
+                                        When the customer is ready to pay, click on <i>Send</i>. This alerts the system
+                                        of an impending terminal usage, and Odoo starts listening for a successful
+                                        transaction.
+                                    </li>
+                                    <li>
+                                        On the terminal, input the actual value displayed on Odoo.
+                                    </li>
+                                    <li>
+                                        Once the payment is approved, the system automatically registers the payment
+                                        and completes the check-out as appropriate.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Version History -->
+                    <div class="col-12 mt-2">
+                        <div class="card-header" id="history">
+                            <div class="row" data-toggle="collapse" data-target="#history_id" aria-expanded="true"
+                                aria-controls="history_id">
+                                <div class="col-10">
+                                    <h5 class="text-danger">Version History</h5>
+                                </div>
+                                <div class="col-2 text-right d-flex justify-content-end align-items-center">
+                                    <i class="fa fa-chevron-right text-danger"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="history_id" class="show" aria-labelledby="history" data-parent="#accordion">
+                            <div class="card-body">
+                                See <a href="https://github.com/seerbit/seerbit-odoo">
+                                    <span class="bg-dark rounded p-2 text-white">
+                                        https://github.com/seerbit/seerbit-odoo
+                                    </span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </font>
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+        integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+        integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+        crossorigin="anonymous"></script>
+</body>
+
+</html>

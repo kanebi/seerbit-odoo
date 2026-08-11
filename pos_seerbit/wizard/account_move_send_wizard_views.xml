@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="account_move_send_wizard_seerbit_inherit" model="ir.ui.view">
+        <field name="name">account.move.send.wizard.seerbit</field>
+        <field name="model">account.move.send.wizard</field>
+        <field name="inherit_id" ref="account.account_move_send_wizard_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@id='extra_edis']" position="inside">
+                <div class="mt-2 d-flex align-items-center">
+                    <field name="send_with_seerbit" widget="boolean_toggle"/>
+                    <label for="send_with_seerbit" class="fw-bold ms-2 mb-0"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+</odoo>

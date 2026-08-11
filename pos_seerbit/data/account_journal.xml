@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Journal creation moved to post_init_hook for Odoo 17/18 compatibility -->
+    <!-- The Seerbit journal is now created programmatically in hooks.py -->
+    
+    <!-- Payment method record - noupdate to prevent recreation conflicts -->
+    <record id="seerbit_pos" model="pos.payment.method" forcecreate="False">
+        <field name="name">Seerbit POS</field>
+        <field name="use_payment_terminal">seerbit</field>
+        <field name="is_cash_count" eval="False"/>
+    </record>
+</odoo> 

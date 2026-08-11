@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="mail_template_seerbit_payment_link" model="mail.template">
+            <field name="name">Seerbit: Payment Link</field>
+            <field name="model_id" ref="pos_seerbit.model_pos_seerbit_payment_link"/>
+            <field name="subject">Payment Request: {{ object.name }}</field>
+            <field name="email_from">{{ (object.env.company.email or user.email_formatted) }}</field>
+            <field name="email_to">{{ object.email or object.partner_id.email }}</field>
+            <field name="description">Template to send Seerbit payment links to customers</field>
+            <field name="body_html" type="html">
+<div style="margin: 0px; padding: 0px;">
+    <p style="margin: 0px; padding: 0px; font-size: 13px;">
+        Dear <t t-out="object.partner_id.name or 'Customer'"/>,
+        <br/><br/>
+        You have received a payment request for <strong t-out="format_amount(object.amount, object.currency_id)"/> from <t t-out="object.env.company.name"/>.
+        <br/><br/>
+        Description: <t t-out="object.description or 'Payment Link'"/>
+        <br/><br/>
+        Please click the button below to complete your payment securely via Seerbit.
+        <br/><br/>
+        <div style="text-align: center; margin: 16px 0px 16px 0px;">
+            <a t-att-href="object.link_url"
+                style="background-color: #875A7B; padding: 8px 16px 8px 16px; text-decoration: none; color: #fff; border-radius: 5px; font-size:13px;">
+                Pay Now
+            </a>
+        </div>
+        <br/><br/>
+        Thank you,
+        <t t-if="user.signature">
+            <br/>
+            <t t-out="user.signature or ''"/>
+        </t>
+    </p>
+</div>
+            </field>
+            <field name="auto_delete" eval="False"/>
+        </record>
+    </data>
+</odoo>

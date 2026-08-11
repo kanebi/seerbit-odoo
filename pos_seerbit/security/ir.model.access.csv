@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pos_payment_method_seerbit,pos.payment.method.seerbit,model_pos_payment_method,point_of_sale.group_pos_user,1,1,1,0
+access_res_config_settings_seerbit,res.config.settings.seerbit,model_res_config_settings,base.group_system,1,1,1,0
+access_seerbit_invoice_payment_wizard,seerbit.invoice.payment.wizard,model_seerbit_invoice_payment_wizard,base.group_user,1,1,1,1
+access_pos_seerbit_payment_link,pos.seerbit.payment.link,model_pos_seerbit_payment_link,base.group_user,1,1,1,1
+access_seerbit_virtual_account,seerbit.virtual.account,model_seerbit_virtual_account,base.group_user,1,1,1,1
+access_seerbit_payout,seerbit.payout,model_seerbit_payout,base.group_user,1,1,1,1
+access_seerbit_payout_otp_wizard,seerbit.payout.otp.wizard,model_seerbit_payout_otp_wizard,base.group_user,1,1,1,1

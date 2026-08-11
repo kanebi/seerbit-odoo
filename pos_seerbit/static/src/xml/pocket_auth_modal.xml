@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="pos_seerbit.PocketAuthModal" owl="1">
+        <Dialog title="'Authenticate Seerbit Pocket'" size="'md'" footer="false">
+            <div class="p-3">
+                <p class="text-muted">
+                    <!-- Your session with the Seerbit Pocket API has expired or is invalid.  -->
+                    Please authenticate with your merchant email and password to proceed with payouts.
+                </p>
+                <t t-if="state.error">
+                    <div class="alert alert-danger" role="alert">
+                        <i class="fa fa-exclamation-circle"></i> <t t-esc="state.error"/>
+                    </div>
+                </t>
+                <t t-if="state.requirePasswordChange">
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa fa-warning"></i> Your Seerbit password must be changed. Please log in to your Seerbit Merchant Dashboard to update it.
+                    </div>
+                </t>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Merchant Email</label>
+                    <input type="email" class="form-control" t-model="state.email" placeholder="merchant@domain.com"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Password</label>
+                    <input type="password" class="form-control" t-model="state.password" placeholder="••••••••" t-on-keyup="onKeyUp"/>
+                </div>
+                
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <button class="btn btn-secondary" t-on-click="props.close">Cancel</button>
+                    <button class="btn btn-primary" t-on-click="authenticate" t-att-disabled="state.loading">
+                        <t t-if="state.loading">
+                            <i class="fa fa-circle-o-notch fa-spin me-2"></i> Authenticating...
+                        </t>
+                        <t t-else="">
+                            Authenticate
+                        </t>
+                    </button>
+                </div>
+            </div>
+        </Dialog>
+    </t>
+</templates>

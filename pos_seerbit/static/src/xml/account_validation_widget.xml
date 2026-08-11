@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="pos_seerbit.AccountNameWidget" owl="1">
+        <div class="d-flex align-items-center w-100">
+            <t t-if="state.loading">
+                <div class="d-flex align-items-center w-100 p-2 border rounded bg-light text-muted">
+                    <i class="fa fa-circle-o-notch fa-spin me-2"></i>
+                    <span>Verifying account...</span>
+                </div>
+            </t>
+            <t t-else="">
+                <t t-if="state.verified">
+                    <div class="d-flex align-items-center w-100 p-2 border border-success rounded bg-light text-success fw-bold">
+                        <i class="fa fa-check-circle me-2"></i>
+                        <span t-esc="props.record.data[props.name]"/>
+                    </div>
+                </t>
+                <t t-elif="state.error">
+                    <div class="d-flex align-items-center w-100 p-2 border border-danger rounded bg-light text-danger fw-bold">
+                        <i class="fa fa-times-circle me-2"></i>
+                        <span t-esc="props.record.data[props.name]"/>
+                    </div>
+                </t>
+                <t t-else="">
+                    <span t-esc="props.record.data[props.name] || ''" class="text-muted"/>
+                </t>
+            </t>
+        </div>
+    </t>
+</templates>
