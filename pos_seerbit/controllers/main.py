@@ -26,21 +26,38 @@ class SeerbitController(http.Controller):
             # ignore none transaction notification
             if notification["eventType"] != "transaction":
                 return
-            payment_method = http.request.env['pos.payment.method'].sudo().search(
-                [('seerbit_public_key', '=', notification["data"]["publicKey"])], limit=1)
+            payment_method = http.request.env['pos.payment.method'].sudo().browse()
+            public_key = notification["data"].get("publicKey")
+            company = http.request.env['res.company'].sudo().seerbit_company_by_public_key(public_key)
+            if not company and public_key:
+                # Ambiguous or missing — try terminalId if present on a Seerbit PM
+                terminal_id = notification["data"].get("terminalId") or notification["data"].get("deviceId")
+                if terminal_id:
+                    payment_method = http.request.env['pos.payment.method'].sudo().search([
+                        ('use_payment_terminal', '=', 'seerbit'),
+                        ('seerbit_terminal_id', '=', terminal_id),
+                    ], limit=1)
+                    company = payment_method.company_id
+            if company and not payment_method:
+                payment_method = http.request.env['pos.payment.method'].sudo().search([
+                    ('company_id', '=', company.id),
+                    ('use_payment_terminal', '=', 'seerbit'),
+                ], limit=1)
 
             if payment_method:
-                # This notification is valid
-                if (notification["data"]["code"] == "00"):# and
-                    #self.is_verified(notification)):
+                if notification["data"]["code"] == "00":
                     payment_method.seerbit_latest_response = json.dumps(notification)
                     _logger.info('A payment notification has been saved')
                 else:
-                    _logger.info('A non-approved notification received from Seerbit for transaction: %s',
-                                notification.get("data", {}).get("transactionRef", "unknown"))
+                    _logger.info(
+                        'A non-approved notification received from Seerbit for transaction: %s',
+                        notification.get("data", {}).get("transactionRef", "unknown"),
+                    )
             else:
-                _logger.error('Received a message with an invalid public key for transaction: %s',
-                            notification.get("data", {}).get("transactionRef", "unknown"))
+                _logger.error(
+                    'Received a message with an invalid/ambiguous public key for transaction: %s',
+                    notification.get("data", {}).get("transactionRef", "unknown"),
+                )
         
         except Exception as e:
             _logger.error(

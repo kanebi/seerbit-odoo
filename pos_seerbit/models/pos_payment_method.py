@@ -41,7 +41,6 @@ except ImportError as e:
     _logger.warning("Firebase Admin SDK not available: %s", str(e))
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
 from werkzeug.exceptions import Forbidden
 
 from odoo.addons.pos_seerbit.utils import format_erp_ref
@@ -199,32 +198,26 @@ def send_to_firestore_transactions(env, payload):
 class PosPaymentMethod(models.Model):
     _inherit = "pos.payment.method"
     
-    # Seerbit Fields
+    # Branch public key comes from company Seerbit settings (not stored per payment method).
     seerbit_public_key = fields.Char(
-        string="Seerbit Public Key", 
-        help="As provided on Seerbit dashboard", 
-        compute="_compute_seerbit_public_key",
-        store=True,
-        readonly=True
+        string="Seerbit Public Key",
+        compute='_compute_seerbit_public_key',
+        help="Resolved from this payment method's company Seerbit settings.",
     )
-
-    @api.depends('use_payment_terminal')
-    def _compute_seerbit_public_key(self):
-        public_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_public_key', default='')
-        for pm in self:
-            if pm.use_payment_terminal == 'seerbit':
-                pm.seerbit_public_key = public_key
-            else:
-                pm.seerbit_public_key = False
     seerbit_terminal_id = fields.Char(
         string="Seerbit Terminal ID", 
         help="Terminal ID as provided on Seerbit dashboard", 
         copy=False
     )
-    seerbit_latest_response = fields.Char(
-        copy=False
-    )  # used to buffer the latest asynchronous notification from Seerbit.
-    
+    # Transient buffer for async Seerbit notifications. No field groups — POS session
+    # load reads this as the terminal user; ERP-manager groups caused ACL denials.
+    seerbit_latest_response = fields.Char(copy=False)
+
+    @api.depends('company_id', 'company_id.seerbit_public_key')
+    def _compute_seerbit_public_key(self):
+        for pm in self:
+            pm.seerbit_public_key = pm.company_id.seerbit_public_key or ''
+
     def _get_payment_terminal_selection(self):
         
         return super()._get_payment_terminal_selection() + [("seerbit", "Seerbit")]
@@ -233,27 +226,13 @@ class PosPaymentMethod(models.Model):
     @api.model
     def _load_pos_data_fields(self, config_id):
        data = super()._load_pos_data_fields(config_id)
-       data += ['seerbit_terminal_id','seerbit_public_key']
+       data += ['seerbit_terminal_id','seerbit_public_key', 'seerbit_latest_response']
        return data
+
     @api.constrains("seerbit_terminal_id")
-    def _check_seerbit_autoconfirm(self):
-        for payment_method in self:
-            if not (payment_method.seerbit_public_key and payment_method.seerbit_terminal_id):
-                continue
-            # Payment methods are now expected to separate at the account levels irrepective of the number of terminals
-            
-            existing_key = self.search(
-                [("id", "!=", payment_method.id), ("seerbit_terminal_id",
-                                                   "=", payment_method.seerbit_terminal_id)],
-                limit=1,
-            )
-        
-            if existing_key:
-                # Restricting duplicate terminals
-                raise ValidationError(
-                    _("Seerbit terminal %s is already used on payment method %s.")
-                    % (payment_method.seerbit_terminal_id, existing_key.display_name)
-                )
+    def _check_seerbit_terminal_share(self):
+        """Same terminal ID may be shared across payment methods (e.g. Small Chops 1 & 2)."""
+        return
 
     def _is_write_forbidden(self, fields):
         whitelisted_fields = {"seerbit_latest_response"}

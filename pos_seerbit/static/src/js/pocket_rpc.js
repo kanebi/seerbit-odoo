@@ -1,40 +1,35 @@
 /** @odoo-module **/
 
+import { session } from "@web/session";
 import { PocketAuthModal } from "./pocket_auth_modal";
+
+function pocketSessionKey(suffix) {
+    const companyId = session.user_companies?.current_company || session.company_id || 0;
+    return `seerbit_pocket_${suffix}_${companyId}`;
+}
 
 /**
  * Wraps an ORM call to automatically handle Pocket API authentication.
  * If POCKET_AUTH_REQUIRED is thrown, it attempts silent re-auth or pops up the modal.
- * 
- * @param {Object} orm - The odoo orm service
- * @param {Object} dialog - The odoo dialog service
- * @param {String} model - Model name
- * @param {String} method - Method name
- * @param {Array} args - Method arguments
- * @param {Object} kwargs - Method kwargs
+ * Credentials in sessionStorage are scoped per company.
  */
 export async function callWithPocketAuth(orm, dialog, model, method, args = [], kwargs = {}) {
     try {
-        // Use orm.silent.call to prevent Odoo from popping up a global error dialog
         return await orm.silent.call(model, method, args, kwargs);
     } catch (error) {
         const errorMsg = error.data?.message || error.message || "";
         if (errorMsg.includes("POCKET_AUTH_REQUIRED")) {
-            // Check for saved credentials
-            const savedEmail = sessionStorage.getItem("seerbit_pocket_email");
-            const savedPassword = sessionStorage.getItem("seerbit_pocket_password");
+            const savedEmail = sessionStorage.getItem(pocketSessionKey("email"));
+            const savedPassword = sessionStorage.getItem(pocketSessionKey("password"));
 
             if (savedEmail && savedPassword) {
                 try {
-                    // Try silent re-auth
                     await orm.silent.call("seerbit.payout", "authenticate_pocket", [savedEmail, savedPassword]);
-                    // Retry original call
                     return await orm.silent.call(model, method, args, kwargs);
                 } catch (reAuthError) {
                     console.warn("Silent re-auth failed, opening modal.");
                 }
             } else {
-                // Try silent auth from config
                 try {
                     const configAuth = await orm.silent.call("seerbit.payout", "authenticate_pocket_with_config", []);
                     if (configAuth) {
@@ -45,12 +40,10 @@ export async function callWithPocketAuth(orm, dialog, model, method, args = [], 
                 }
             }
 
-            // Open Auth Modal
             return new Promise((resolve, reject) => {
                 dialog.add(PocketAuthModal, {
                     onSuccess: async () => {
                         try {
-                            // Retry original call after successful manual auth
                             const result = await orm.silent.call(model, method, args, kwargs);
                             resolve(result);
                         } catch (err) {
@@ -60,8 +53,7 @@ export async function callWithPocketAuth(orm, dialog, model, method, args = [], 
                 });
             });
         }
-        
-        // Throw normal errors
+
         throw error;
     }
 }

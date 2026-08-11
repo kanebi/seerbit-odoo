@@ -7,8 +7,10 @@
         <field name="arch" type="xml">
             <xpath expr="//field[@name='use_payment_terminal']" position="after">
                 <!-- Seerbit -->
-                <field name="seerbit_public_key" invisible="use_payment_terminal != 'seerbit'" readonly="1"/>
                 <field name="seerbit_terminal_id" invisible="use_payment_terminal != 'seerbit'" required="use_payment_terminal == 'seerbit'"/>
+                <div class="text-muted" invisible="use_payment_terminal != 'seerbit'">
+                    Public/secret keys are configured per company under Settings → Seerbit.
+                </div>
             </xpath>
         </field>
     </record>

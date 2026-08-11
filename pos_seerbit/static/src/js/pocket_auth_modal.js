@@ -3,12 +3,18 @@
 import { Component, useState } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { useService } from "@web/core/utils/hooks";
+import { session } from "@web/session";
+
+function pocketSessionKey(suffix) {
+    const companyId = session.user_companies?.current_company || session.company_id || 0;
+    return `seerbit_pocket_${suffix}_${companyId}`;
+}
 
 export class PocketAuthModal extends Component {
     setup() {
         this.orm = useService("orm");
         this.state = useState({
-            email: sessionStorage.getItem("seerbit_pocket_email") || "",
+            email: sessionStorage.getItem(pocketSessionKey("email")) || "",
             password: "",
             loading: false,
             error: false,
@@ -30,21 +36,23 @@ export class PocketAuthModal extends Component {
 
         this.state.loading = true;
         this.state.error = false;
-        
+
         try {
-            const result = await this.orm.silent.call("seerbit.payout", "authenticate_pocket", [this.state.email, this.state.password]);
-            
+            const result = await this.orm.silent.call(
+                "seerbit.payout",
+                "authenticate_pocket",
+                [this.state.email, this.state.password]
+            );
+
             if (result && result.requirePasswordChange) {
                 this.state.requirePasswordChange = true;
                 this.state.loading = false;
                 return;
             }
 
-            // Save temporarily in sessionStorage
-            sessionStorage.setItem("seerbit_pocket_email", this.state.email);
-            sessionStorage.setItem("seerbit_pocket_password", this.state.password);
+            sessionStorage.setItem(pocketSessionKey("email"), this.state.email);
+            sessionStorage.setItem(pocketSessionKey("password"), this.state.password);
 
-            // Close dialog and resolve promise
             this.props.onSuccess();
             this.props.close();
 

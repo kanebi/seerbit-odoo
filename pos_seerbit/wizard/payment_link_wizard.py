@@ -26,7 +26,7 @@ class PaymentLinkWizard(models.TransientModel):
         move = self.env['account.move'].browse(self.res_id)
         
         from ..services.seerbit_api import SeerbitAPI
-        api_client = SeerbitAPI(self.env)
+        api_client = SeerbitAPI(self.env, company=move.company_id)
         
         import uuid
         sanitized_name = f"INV-{move.id}-{uuid.uuid4().hex[:4]}"
@@ -47,11 +47,15 @@ class PaymentLinkWizard(models.TransientModel):
             
             self.env['pos_seerbit.payment.link'].create({
                 'move_id': move.id,
+                'company_id': move.company_id.id,
+                'partner_id': move.partner_id.id,
+                'email': self.partner_email or move.partner_id.email,
                 'name': link_name,
                 'amount': self.amount,
                 'description': move.name,
                 'link_url': link_data['paymentLinkUrl'],
-                'seerbit_link_id': link_data.get('paymentLinkId')
+                'seerbit_link_id': link_data.get('paymentLinkId'),
+                'currency_id': self.currency_id.id,
             })
             
         return {

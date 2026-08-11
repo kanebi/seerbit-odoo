@@ -5,33 +5,42 @@ from odoo.exceptions import UserError
 _logger = logging.getLogger(__name__)
 
 class SeerbitAPI:
-    def __init__(self, env):
+    def __init__(self, env, company=None):
         self.env = env
-        
-        # Get Secret Key from config
-        self.secret_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_secret_key', default='')
-        
-        # Get Public Key from config
-        self.public_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_public_key', default='')
-        
+        self.company = company or env.company
+        if not self.company:
+            raise UserError("Seerbit API requires a company context.")
+
+        company = self.company.sudo()
+        self.secret_key = company.seerbit_secret_key or ''
+        self.public_key = company.seerbit_public_key or ''
+        self._encrypted_key_param = f'pos_seerbit.seerbit_encrypted_key.{company.id}'
+
         self._encrypted_key = None
-        
+
         if not self.secret_key or not self.public_key:
-            _logger.warning("Seerbit Secret Key or Public Key is not configured.")
+            _logger.warning(
+                "Seerbit keys missing for company %s (%s).",
+                company.name,
+                company.id,
+            )
 
     def _get_encrypted_key(self, force_refresh=False):
         if self._encrypted_key and not force_refresh:
             return self._encrypted_key
-            
+
         param_obj = self.env['ir.config_parameter'].sudo()
         if not force_refresh:
-            cached_key = param_obj.get_param('pos_seerbit.seerbit_encrypted_key')
+            cached_key = param_obj.get_param(self._encrypted_key_param)
             if cached_key:
                 self._encrypted_key = cached_key
                 return cached_key
 
         if not self.secret_key or not self.public_key:
-             raise UserError("Seerbit keys are missing. Please configure them in Settings.")
+             raise UserError(
+                 "Seerbit keys are missing for %s. Configure them in Settings → Seerbit for that company."
+                 % self.company.name
+             )
 
         url = 'https://seerbitapi.com/api/v2/encrypt/keys'
         payload = {
@@ -45,13 +54,13 @@ class SeerbitAPI:
                 data = res_data['data']
                 if 'EncryptedSecKey' in data and 'encryptedKey' in data['EncryptedSecKey']:
                     self._encrypted_key = data['EncryptedSecKey']['encryptedKey']
-                    param_obj.set_param('pos_seerbit.seerbit_encrypted_key', self._encrypted_key)
+                    param_obj.set_param(self._encrypted_key_param, self._encrypted_key)
                     return self._encrypted_key
             raise UserError("Failed to parse encrypted key from Seerbit response")
         except Exception as e:
             _logger.error(f"Seerbit Encrypt Key Error: {e}")
             if not force_refresh:
-                cached_key = param_obj.get_param('pos_seerbit.seerbit_encrypted_key')
+                cached_key = param_obj.get_param(self._encrypted_key_param)
                 if cached_key:
                     self._encrypted_key = cached_key
                     return cached_key

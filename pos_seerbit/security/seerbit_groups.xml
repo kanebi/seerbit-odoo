@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="module_category_seerbit" model="ir.module.category">
+            <field name="name">Seerbit</field>
+            <field name="sequence">45</field>
+        </record>
+
+        <!-- Backend toast + soft-reload for Seerbit payment bus events.
+             Membership is assigned by deploying modules (e.g. Labule accountants). -->
+        <record id="group_seerbit_notification_user" model="res.groups">
+            <field name="name">Seerbit Notification User</field>
+            <field name="category_id" ref="module_category_seerbit"/>
+            <field name="comment">Receive Seerbit payment UI notifications and soft-reload when the related record is open.</field>
+        </record>
+    </data>
+</odoo>

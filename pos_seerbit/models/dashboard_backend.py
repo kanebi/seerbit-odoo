@@ -4,18 +4,27 @@ from ..services.seerbit_pocket_api import require_seerbit_auth
 
 _logger = logging.getLogger(__name__)
 
+
 class SeerbitDashboardBackend(models.AbstractModel):
     _name = 'seerbit.dashboard.backend'
     _description = 'Seerbit Dashboard Backend'
 
     @api.model
     def get_dashboard_data(self, filter_24h=False):
-        journal = self.env['account.journal'].search([('type', '=', 'bank'), ('name', 'ilike', 'Seerbit')], limit=1)
+        company = self.env.company
+        journal = self.env['account.journal'].search([
+            ('type', '=', 'bank'),
+            ('name', 'ilike', 'Seerbit'),
+            ('company_id', '=', company.id),
+        ], limit=1)
         if not journal:
-            journal = self.env['account.journal'].search([('type', '=', 'bank')], limit=1)
-            
+            journal = self.env['account.journal'].search([
+                ('type', '=', 'bank'),
+                ('company_id', '=', company.id),
+            ], limit=1)
+
         odoo_balance = 0.0
-        currency_symbol = self.env.company.currency_id.symbol
+        currency_symbol = company.currency_id.symbol
         if journal:
             account = journal.default_account_id
             if account:
@@ -35,15 +44,17 @@ class SeerbitDashboardBackend(models.AbstractModel):
                     """, [account.id])
                 result = self.env.cr.fetchone()
                 odoo_balance = result[0] if result and result[0] else 0.0
-                
-        domain = [('journal_id', '=', journal.id)] if journal else []
+
+        domain = [('journal_id', '=', journal.id), ('company_id', '=', company.id)] if journal else [
+            ('company_id', '=', company.id),
+        ]
         if filter_24h:
             from datetime import timedelta
             twenty_four_hours_ago = fields.Datetime.now() - timedelta(hours=24)
             domain.append(('create_date', '>=', twenty_four_hours_ago))
         limit = None if filter_24h else 10
         payments = self.env['account.payment'].search(domain, limit=limit, order='date desc, id desc')
-        
+
         recent_transactions = []
         for p in payments:
             recent_transactions.append({
@@ -72,7 +83,7 @@ class SeerbitDashboardBackend(models.AbstractModel):
     @require_seerbit_auth
     def get_pocket_balance(self):
         from ..services.seerbit_pocket_api import SeerbitPocketAPI
-        api_client = SeerbitPocketAPI(self.env)
+        api_client = SeerbitPocketAPI(self.env, company=self.env.company)
         try:
             return float(api_client.get_pocket_balance())
         except Exception as e:

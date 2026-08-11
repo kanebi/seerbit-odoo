@@ -26,6 +26,7 @@
                     <group>
                         <group>
                             <field name="partner_id"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
                             <field name="bank_name"/>
                         </group>
                         <group>
@@ -58,6 +59,7 @@
         <field name="arch" type="xml">
             <list string="Virtual Accounts">
                 <field name="partner_id"/>
+                <field name="company_id" groups="base.group_multi_company"/>
                 <field name="name"/>
                 <field name="bank_name"/>
                 <field name="account_number"/>

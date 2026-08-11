@@ -3,22 +3,11 @@ import json
 from odoo import http
 from odoo.http import request
 
+from odoo.addons.pos_seerbit.bus_notify import send_seerbit_ui_notification
+
 _logger = logging.getLogger(__name__)
 
 class SeerbitWebhookController(http.Controller):
-
-    @http.route('/seerbit/debug_pay', type='http', auth='public', csrf=False)
-    def debug_pay(self, **kw):
-        payment = request.env['account.payment'].sudo().search([('name', '=', 'PAY00018')], limit=1)
-        if not payment:
-            return "PAY00018 not found"
-        res = [f"Payment State: {payment.state}"]
-        if payment.move_id:
-            for l in payment.move_id.line_ids:
-                res.append(f"Line {l.id} | Account: {l.account_id.id} ({l.account_id.name}) - Type: {l.account_id.account_type} | D: {l.debit} C: {l.credit}")
-            res.append(f"Valid Liq Accs: {[a.name for a in payment._get_valid_liquidity_accounts()]}")
-            res.append(f"Seek lines: {payment._seek_for_lines()}")
-        return "<br>".join(res)
 
     @http.route('/api/seerbit/webhook', type='http', auth='public', methods=['POST'], csrf=False)
     def handle_webhook(self, **kwargs):
@@ -86,49 +75,85 @@ class SeerbitWebhookController(http.Controller):
                 _logger.info(f"Seerbit Webhook ignoring non-success gatewayCode: {gateway_code}")
                 continue
 
-            # Verify public key matches our configured key to prevent spoofing
-            from ..services.seerbit_api import SeerbitAPI
-            api_client = SeerbitAPI(request.env)
-            if public_key and public_key != api_client.public_key:
-                _logger.warning(f"Seerbit Webhook public key mismatch! Received: {public_key}, Expected: {api_client.public_key}")
-                continue
+            Company = request.env['res.company'].sudo()
+            # Prefer business-object company; public key is verification / last resort
+            # (legacy 0.2.0 migration may have duplicated the same global key on many companies).
+            key_company = Company.seerbit_company_by_public_key(public_key) if public_key else Company.browse()
+
+            def _company_key_ok(company):
+                """Reject if webhook publicKey is set and does not match this company's key."""
+                if not company or not public_key:
+                    return bool(company)
+                expected = (company.seerbit_public_key or '').strip()
+                if expected and expected != public_key.strip():
+                    _logger.warning(
+                        "Seerbit Webhook: publicKey mismatch for %s (payload key != company key)",
+                        company.name,
+                    )
+                    return False
+                return True
 
             # ===========================================================
             # SECTION 1: Payment Link Payments
             # Matched by paymentLinkId → pos_seerbit.payment.link.seerbit_link_id
             # ===========================================================
             if payment_link_id:
-                link = request.env['pos_seerbit.payment.link'].sudo().search([('seerbit_link_id', '=', str(payment_link_id))], limit=1)
+                link = request.env['pos_seerbit.payment.link'].sudo().search(
+                    [('seerbit_link_id', '=', str(payment_link_id))], limit=1
+                )
                 if link:
+                    company = link.company_id or (
+                        link.move_id.company_id
+                        if link.move_id
+                        else (link.partner_id.company_id or key_company)
+                    )
+                    if not _company_key_ok(company):
+                        _logger.warning(
+                            "Seerbit Webhook: cannot resolve company for payment link %s",
+                            payment_link_id,
+                        )
+                        continue
                     # Check if this reference was already processed (duplicate webhook)
                     if reference:
-                        existing_payment = request.env['account.payment'].sudo().search([('move_id.ref', '=', reference)], limit=1)
+                        existing_payment = request.env['account.payment'].sudo().search(
+                            [('move_id.ref', '=', reference)], limit=1
+                        )
                         if existing_payment:
-                            # Post draft payments that were created but not yet confirmed
                             if existing_payment.state == 'draft':
-                                existing_payment.sudo().action_post()
-                            # Reconcile in-process payments with bank statement
+                                seerbit_co = Company.seerbit_company(company)
+                                if seerbit_co.seerbit_auto_post:
+                                    _logger.info(
+                                        "Seerbit Webhook: Found existing pending payment %s. Posting it...",
+                                        reference,
+                                    )
+                                    existing_payment.sudo().action_post()
                             if existing_payment.state == 'in_process':
                                 link.move_id.partner_id.sudo()._reconcile_seerbit_payment(existing_payment)
-                            _logger.info(f"Seerbit Webhook: Payment Link {payment_link_id} already processed.")
+                            _logger.info(
+                                "Seerbit Webhook: Payment Link %s already processed.", payment_link_id
+                            )
                             continue
                     try:
-                        # Create payment, post it, and reconcile with the linked invoice
                         link._process_payment(amount, reference or f"Link Payment {payment_link_id}")
-                        # Notify all logged-in users via bus broadcast
-                        request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                            'title': 'Seerbit Payment Received',
-                            'message': f'Payment received for Link: {link.name}',
-                        })
-                        _logger.info(f"Seerbit Webhook: Processed payment link for {link.name}")
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit Payment Received',
+                            f'Payment received for Link: {link.name}',
+                            record=link,
+                        )
+                        _logger.info("Seerbit Webhook: Processed payment link for %s", link.name)
                     except Exception as e:
-                        _logger.error(f"Seerbit Webhook Error processing payment link: {e}")
-                        request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                            'title': 'Seerbit Webhook Error',
-                            'message': f'Failed to process Link payment: {str(e)}',
-                        })
+                        _logger.error("Seerbit Webhook Error processing payment link: %s", e)
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit Webhook Error',
+                            f'Failed to process Link payment: {str(e)}',
+                            record=link,
+                        )
                 else:
-                    _logger.warning(f"Seerbit Webhook: Payment Link ID {payment_link_id} not found in DB.")
+                    _logger.warning(
+                        "Seerbit Webhook: Payment Link ID %s not found in DB.", payment_link_id
+                    )
                 continue
 
             # ===========================================================
@@ -136,37 +161,47 @@ class SeerbitWebhookController(http.Controller):
             # Matched by invoiceNumber → account.move.seerbit_invoice_no
             # ===========================================================
             elif invoice_number:
-                # Find the Odoo invoice that was synced to Seerbit with this invoice number
                 move = request.env['account.move'].sudo().search([
                     ('seerbit_invoice_no', '=', invoice_number),
                     ('move_type', '=', 'out_invoice'),
                 ], limit=1)
                 if not move:
-                    _logger.warning(f"Seerbit Webhook: Invoice number {invoice_number} not found in Odoo.")
+                    _logger.warning(
+                        "Seerbit Webhook: Invoice number %s not found in Odoo.", invoice_number
+                    )
                     continue
 
-                # Skip if the invoice is already fully paid
+                company = move.company_id
+                if not _company_key_ok(company):
+                    continue
+
                 if move.payment_state in ('paid', 'in_payment', 'reversed'):
-                    _logger.info(f"Seerbit Webhook: Invoice {move.name} ({invoice_number}) already settled. Skipping.")
+                    _logger.info(
+                        "Seerbit Webhook: Invoice %s (%s) already settled. Skipping.",
+                        move.name, invoice_number,
+                    )
                     continue
 
-                # Prevent duplicate processing based on transaction reference
                 if reference:
-                    existing_payment = request.env['account.payment'].sudo().search([('move_id.ref', '=', reference)], limit=1)
+                    existing_payment = request.env['account.payment'].sudo().search(
+                        [('move_id.ref', '=', reference)], limit=1
+                    )
                     if existing_payment:
                         if existing_payment.state == 'draft':
-                            auto_post = request.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_auto_post', default='True') == 'True'
-                            if auto_post:
+                            seerbit_co = Company.seerbit_company(move.company_id)
+                            if seerbit_co.seerbit_auto_post:
                                 existing_payment.sudo().action_post()
                         if existing_payment.state == 'in_process':
                             move.partner_id.sudo()._reconcile_seerbit_payment(existing_payment)
-                        _logger.info(f"Seerbit Webhook: Invoice payment {reference} already processed.")
+                        _logger.info(
+                            "Seerbit Webhook: Invoice payment %s already processed.", reference
+                        )
                         continue
 
                 try:
-                    # Find the Seerbit bank journal (or fallback to any bank journal)
                     journal = request.env['account.journal'].sudo().search(
-                        [('type', '=', 'bank'), ('name', 'ilike', 'Seerbit'), ('company_id', '=', move.company_id.id)], limit=1
+                        [('type', '=', 'bank'), ('name', 'ilike', 'Seerbit'),
+                         ('company_id', '=', move.company_id.id)], limit=1
                     )
                     if not journal:
                         journal = request.env['account.journal'].sudo().search(
@@ -175,10 +210,13 @@ class SeerbitWebhookController(http.Controller):
 
                     payment_method = request.env.ref('account.account_payment_method_manual_in')
 
-                    invoice_receivable_line = move.line_ids.filtered(lambda l: l.account_id.account_type == 'asset_receivable')
-                    dest_account_id = invoice_receivable_line[0].account_id.id if invoice_receivable_line else False
+                    invoice_receivable_line = move.line_ids.filtered(
+                        lambda l: l.account_id.account_type == 'asset_receivable'
+                    )
+                    dest_account_id = (
+                        invoice_receivable_line[0].account_id.id if invoice_receivable_line else False
+                    )
 
-                    # Create the inbound payment record
                     payment_method_line = journal.inbound_payment_method_line_ids.filtered(
                         lambda l: l.payment_method_id == payment_method
                     )[:1] or journal.inbound_payment_method_line_ids[:1]
@@ -195,100 +233,135 @@ class SeerbitWebhookController(http.Controller):
                     }
                     if dest_account_id:
                         payment_vals['destination_account_id'] = dest_account_id
-                        
-                    outstanding_acc = payment_method_line.payment_account_id or journal.default_account_id or journal.company_id.transfer_account_id
+
+                    outstanding_acc = (
+                        payment_method_line.payment_account_id
+                        or journal.default_account_id
+                        or journal.company_id.transfer_account_id
+                    )
                     if outstanding_acc:
                         payment_vals['force_outstanding_account_id'] = outstanding_acc.id
 
                     payment = request.env['account.payment'].sudo().create(payment_vals)
-                    # Post the payment (draft → posted)
-                    auto_post = request.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_auto_post', default='True') == 'True'
+                    seerbit_co = Company.seerbit_company(move.company_id)
+                    auto_post = seerbit_co.seerbit_auto_post
+                    auto_reconcile = seerbit_co.seerbit_auto_reconcile
                     if auto_post:
                         payment.action_post()
 
-                    # Auto-reconcile: match payment receivable lines with invoice receivable lines
-                    auto_reconcile = request.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_auto_reconcile', default='True') == 'True'
                     if auto_post and auto_reconcile:
                         payment_lines = payment.move_id.line_ids.filtered(
-                            lambda line: line.account_id.account_type == 'asset_receivable' and not line.reconciled
+                            lambda line: line.account_id.account_type == 'asset_receivable'
+                            and not line.reconciled
                         )
                         if payment_lines:
                             try:
                                 move.js_assign_outstanding_line(payment_lines[0].id)
                             except Exception as e:
-                                _logger.error(f"Failed to auto-reconcile payment for invoice {move.name}: {e}")
-    
-                        # Force bank statement reconciliation so payment state becomes 'paid'
+                                _logger.error(
+                                    "Failed to auto-reconcile payment for invoice %s: %s",
+                                    move.name, e,
+                                )
+
                         if payment.state == 'in_process':
                             move.partner_id.sudo()._reconcile_seerbit_payment(payment)
 
-                    # Update the Seerbit status on the invoice record
-                    move.sudo().write({
-                        'seerbit_invoice_status': 'PAID',
-                    })
-                    move.message_post(body=f"Seerbit Webhook: Invoice marked as PAID. Amount: {amount}, Ref: {invoice_number}")
+                    move.sudo().write({'seerbit_invoice_status': 'PAID'})
+                    move.message_post(
+                        body=f"Seerbit Webhook: Invoice marked as PAID. Amount: {amount}, Ref: {invoice_number}"
+                    )
 
-                    # Notify all logged-in users via bus broadcast
-                    request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                        'title': 'Seerbit Invoice Paid',
-                        'message': f'Invoice {move.name} paid via Seerbit ({invoice_number})',
-                    })
-                    _logger.info(f"Seerbit Webhook: Processed invoice payment for {move.name} ({invoice_number})")
+                    send_seerbit_ui_notification(
+                        request.env,
+                        'Seerbit Invoice Paid',
+                        f'Invoice {move.name} paid via Seerbit ({invoice_number})',
+                        record=move,
+                    )
+                    _logger.info(
+                        "Seerbit Webhook: Processed invoice payment for %s (%s)",
+                        move.name, invoice_number,
+                    )
                 except Exception as e:
-                    _logger.error(f"Seerbit Webhook Error processing invoice payment for {invoice_number}: {e}", exc_info=True)
-                    request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                        'title': 'Seerbit Webhook Error',
-                        'message': f'Failed to process Invoice {invoice_number}: {str(e)}',
-                    })
+                    _logger.error(
+                        "Seerbit Webhook Error processing invoice payment for %s: %s",
+                        invoice_number, e, exc_info=True,
+                    )
+                    send_seerbit_ui_notification(
+                        request.env,
+                        'Seerbit Webhook Error',
+                        f'Failed to process Invoice {invoice_number}: {str(e)}',
+                        record=move,
+                    )
                 continue
 
+            # ===========================================================
             # SECTION 3: Virtual Account (VA) Payments
-            # Matched by creditAccountNumber/accountNumber → seerbit.virtual.account.account_number
+            # Matched by creditAccountNumber/accountNumber → seerbit.virtual.account
             # ===========================================================
             elif account_number:
-                # Find the virtual account
-                va = request.env['seerbit.virtual.account'].sudo().search([('account_number', '=', account_number)], limit=1)
+                va = request.env['seerbit.virtual.account'].sudo().search(
+                    [('account_number', '=', account_number)], limit=1
+                )
                 if not va:
-                    _logger.warning(f"Seerbit Webhook: No Virtual Account found for {account_number}")
+                    _logger.warning(
+                        "Seerbit Webhook: No Virtual Account found for %s", account_number
+                    )
                     continue
 
-                # Prevent duplicate processing based on transaction reference
+                company = va.company_id or key_company
+                if not _company_key_ok(company):
+                    _logger.warning(
+                        "Seerbit Webhook: cannot resolve company for VA %s", account_number
+                    )
+                    continue
+
                 if reference:
-                    existing_payment = request.env['account.payment'].sudo().search([('move_id.ref', '=', reference)], limit=1)
+                    existing_payment = request.env['account.payment'].sudo().search(
+                        [('move_id.ref', '=', reference)], limit=1
+                    )
                     if existing_payment:
-                        # Post draft payments that were created but not yet confirmed
                         if existing_payment.state == 'draft':
-                            auto_post = request.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_auto_post', default='True') == 'True'
-                            if auto_post:
-                                _logger.info(f"Seerbit Webhook: Found existing pending payment {reference}. Posting it...")
+                            seerbit_co = Company.seerbit_company(company)
+                            if seerbit_co.seerbit_auto_post:
+                                _logger.info(
+                                    "Seerbit Webhook: Found existing pending payment %s. Posting it...",
+                                    reference,
+                                )
                                 existing_payment.sudo().action_post()
-                        # Reconcile in-process payments with bank statement
                         if existing_payment.state == 'in_process':
                             va.sudo()._reconcile_seerbit_payment(existing_payment)
-                            
-                        _logger.info(f"Seerbit Webhook: Payment {reference} already processed/posted.")
+
+                        _logger.info(
+                            "Seerbit Webhook: Payment %s already processed/posted.", reference
+                        )
                         continue
 
                 try:
-                    # Process the VA payment: create payment, post, reconcile oldest invoices
                     va.sudo()._process_seerbit_va_payment(amount, reference or "Webhook Payment")
-                    # Notify all logged-in users via bus broadcast
-                    request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                        'title': 'Seerbit Payment Received',
-                        'message': f'VA Payment of {amount} received for {va.partner_id.name}',
-                    })
-                    _logger.info(f"Seerbit Webhook: Processed payment of {amount} for {va.partner_id.name}")
+                    send_seerbit_ui_notification(
+                        request.env,
+                        'Seerbit Payment Received',
+                        f'VA Payment of {amount} received for {va.partner_id.name}',
+                        record=va,
+                    )
+                    _logger.info(
+                        "Seerbit Webhook: Processed payment of %s for %s",
+                        amount, va.partner_id.name,
+                    )
                 except Exception as e:
-                    _logger.error(f"Seerbit Webhook Error processing payment: {e}")
-                    request.env['bus.bus'].sudo()._sendone('broadcast', 'seerbit_payment_received', {
-                        'title': 'Seerbit Webhook Error',
-                        'message': f'Failed to process VA payment: {str(e)}',
-                    })
+                    _logger.error("Seerbit Webhook Error processing payment: %s", e)
+                    send_seerbit_ui_notification(
+                        request.env,
+                        'Seerbit Webhook Error',
+                        f'Failed to process VA payment: {str(e)}',
+                        record=va,
+                    )
 
-            # ===========================================================
-            # Unrecognized payload — no paymentLinkId, invoiceNumber, or accountNumber
-            # ===========================================================
             else:
-                _logger.warning(f"Seerbit Webhook: Unrecognized payment type — no paymentLinkId, invoiceNumber, or accountNumber. Payload: {payment_data}")
+                _logger.warning(
+                    "Seerbit Webhook: Unrecognized payment type — no paymentLinkId, "
+                    "invoiceNumber, or accountNumber. Payload: %s",
+                    payment_data,
+                )
 
         return request.make_response(json.dumps({"status": "success", "message": "Processed"}), headers={'Content-Type': 'application/json'})

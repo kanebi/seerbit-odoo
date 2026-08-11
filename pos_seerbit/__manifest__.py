@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Seerbit Odoo Point of Sale",
-    "version": "0.1.5",
+    "version": "0.2.7",
     "category": "Sales/Point of Sale",
     "summary": "Integrate your POS with a Seerbit payment terminal with real-time payment and reconciliation.",
     "description": """
@@ -20,6 +20,7 @@
     "author": "Seerbit",
     "website": "https://github.com/seerbit/seerbit-odoo",
     "data": [
+        "security/seerbit_groups.xml",
         "security/ir.model.access.csv",
         "data/account_journal.xml",
         "data/cron.xml",
