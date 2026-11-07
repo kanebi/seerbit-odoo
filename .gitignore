@@ -153,3 +153,7 @@ docker-compose.override.yml
 requirements-dev.txt
 .pre-commit-config.yaml
 pyproject.toml
+
+# SeerBit Technical Specifications & Internal Documentation
+specs/
+pos_seerbit/specs/

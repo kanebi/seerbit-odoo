@@ -2,12 +2,67 @@
 <templates id="template" xml:space="preserve">
     <t t-name="SeerbitPaymentScreenPaymentLines"
        t-inherit="point_of_sale.PaymentScreenPaymentLines"
-       
        t-inherit-mode="extension"
        owl="1">
 
-        <xpath expr="//div[contains(@class, 'electronic_payment')]" position="inside">
+        <!-- Inline Card: Only open when accordion is explicitly toggled open -->
+        <xpath expr="//t[@t-if='line.isSelected()']" position="inside">
+            <t t-if="line.payment_method_id.payment_method_type == 'transfer' and line.seerbit_expanded">
+                <SeerbitVaPaymentWidget paymentLine="line" />
+            </t>
+        </xpath>
 
+        <!-- Matched / Awaiting Payment Badge for Active Selected Line -->
+        <xpath expr="//span[contains(@class, 'payment-name')]" position="after">
+            <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
+                <span t-if="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
+                      class="badge bg-success ms-2 fs-6 fw-bold">
+                    <i class="fa fa-check me-1"/>Matched
+                </span>
+                <span t-else="" 
+                      class="badge bg-warning text-dark ms-2 fs-6 fw-bold">
+                    <i class="fa fa-clock-o me-1"/>Awaiting Payment
+                </span>
+            </t>
+        </xpath>
+
+        <!-- Transfer Line Controls for Selected Line: Accordion Arrow Only -->
+        <xpath expr="//button[contains(@class, 'delete-button')]" position="before">
+            <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
+                <button class="btn btn-link mx-1 px-2 text-dark seerbit-accordion-btn"
+                        t-on-click.stop="() => this.toggleSeerbitAccordion(line)"
+                        title="Toggle Inline View">
+                    <i t-attf-class="fa fa-chevron-#{line.seerbit_expanded ? 'up' : 'down'} fs-5" style="color: #374151;"/>
+                </button>
+            </t>
+        </xpath>
+
+        <!-- Matched / Awaiting Payment Badge for Inactive Unselected Line -->
+        <xpath expr="//div[contains(@class, 'bg-view')]//div[contains(@class, 'payment-amount')]" position="before">
+            <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
+                <span t-if="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
+                      class="badge bg-success ms-2 fs-6 fw-bold">
+                    <i class="fa fa-check me-1"/>Matched
+                </span>
+                <span t-else="" 
+                      class="badge bg-warning text-dark ms-2 fs-6 fw-bold">
+                    <i class="fa fa-clock-o me-1"/>Awaiting Payment
+                </span>
+            </t>
+        </xpath>
+
+        <!-- Transfer Line Controls for Unselected Line: Accordion Arrow Only -->
+        <xpath expr="//div[contains(@class, 'bg-view')]//div[contains(@class, 'delete-button')]" position="before">
+            <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
+                <button class="btn btn-link mx-1 px-2 text-dark seerbit-accordion-btn"
+                        t-on-click.stop="() => this.toggleSeerbitAccordion(line)"
+                        title="Toggle Inline View">
+                    <i t-attf-class="fa fa-chevron-#{line.seerbit_expanded ? 'up' : 'down'} fs-5" style="color: #374151;"/>
+                </button>
+            </t>
+        </xpath>
+
+        <xpath expr="//div[contains(@class, 'electronic_payment')]" position="inside">
 
             <!-- Seerbit: Waiting for payment -->
             <t t-if="line.payment_status == 'waitingSeerbit'">
@@ -45,7 +100,6 @@
                     <div class="button send_force_done dangerous"
                          title="Force Done"
                          aria-label="Force Confirm"
-                         
                          t-on-click="() => this.props.sendForceDone(line)">
                         <i class="fa fa-bolt seerbit-icon" aria-hidden="true"/> Force Confirm
                     </div>

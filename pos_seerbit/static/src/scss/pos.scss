@@ -114,3 +114,289 @@ $seerbit-transition: all 0.15s cubic-bezier(0.4,0,0.2,1);
     margin-top: 0.5em;
     margin-bottom: 0.5em;    
 }
+
+
+// SeerBit Virtual Account Bank Transfer Widget (Accordion Content)
+.seerbit-va-payment-widget {
+    background-color: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 0.85rem !important;
+    margin-top: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04) !important;
+
+    .card {
+        border-radius: 0.75rem;
+    }
+
+    .text-secondary {
+        color: #374151 !important;
+    }
+
+    .text-muted {
+        color: #4b5563 !important;
+    }
+}
+
+.seerbit-incoming-payments-modal {
+    .table-hover tbody tr:hover {
+        cursor: pointer;
+    }
+
+    .text-secondary {
+        color: #374151 !important;
+    }
+
+    .text-muted {
+        color: #4b5563 !important;
+    }
+}
+
+// SeerBit 90% Dialog Width & Full Responsiveness
+.modal:has(.seerbit-va-modal-content) .modal-dialog,
+.modal-dialog:has(.seerbit-va-modal-content),
+.modal:has(.seerbit-modal-wrapper) .modal-dialog,
+.modal-dialog:has(.seerbit-modal-wrapper),
+.modal:has(.seerbit-incoming-modal-content) .modal-dialog,
+.modal-dialog:has(.seerbit-incoming-modal-content),
+.modal:has(.seerbit-incoming-payments-modal) .modal-dialog,
+.modal-dialog:has(.seerbit-incoming-payments-modal) {
+    width: 90vw !important;
+    max-width: 90vw !important;
+    margin: 1rem auto !important;
+}
+
+// Completely suppress unneeded native Odoo headers and empty footers
+.modal:has(.seerbit-va-modal-content) .modal-header,
+.modal:has(.seerbit-modal-wrapper) .modal-header,
+.modal:has(.seerbit-incoming-modal-content) .modal-header,
+.modal:has(.seerbit-incoming-payments-modal) .modal-header,
+.o_dialog:has(.seerbit-va-modal-content) .modal-header,
+.o_dialog:has(.seerbit-modal-wrapper) .modal-header,
+.o_dialog:has(.seerbit-incoming-modal-content) .modal-header,
+.o_dialog:has(.seerbit-incoming-payments-modal) .modal-header {
+    display: none !important;
+}
+
+.modal:has(.seerbit-va-modal-content) > .modal-dialog > .modal-content > .modal-footer:empty,
+.modal:has(.seerbit-modal-wrapper) > .modal-dialog > .modal-content > .modal-footer:empty,
+.modal:has(.seerbit-incoming-modal-content) > .modal-dialog > .modal-content > .modal-footer:empty {
+    display: none !important;
+}
+
+.seerbit-va-modal-content,
+.seerbit-incoming-modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 70vh !important;
+    min-height: 540px !important;
+    max-height: 88vh !important;
+    margin: auto;
+    border-radius: 0.75rem !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid rgba(0, 0, 0, 0.15) !important;
+    background-color: #ffffff !important;
+
+    .modal-content {
+        height: 100% !important;
+        border-radius: 0.75rem !important;
+        overflow: hidden !important;
+        border: none !important;
+    }
+
+    .text-secondary {
+        color: #374151 !important;
+    }
+
+    .text-muted {
+        color: #4b5563 !important;
+    }
+}
+
+.seerbit-split-container {
+    animation: fadeIn 0.25s ease-in-out;
+}
+
+.seerbit-squeeze-col {
+    transition: all 0.3s ease-in-out;
+}
+
+.seerbit-payments-list-col {
+    background-color: #ffffff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+// SeerBit Cozy Theme Cards (No Purple!)
+.seerbit-bank-card {
+    border: 2px solid #E2E8F0 !important;
+    background: #ffffff !important;
+    border-radius: 1rem !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03) !important;
+    transition: all 0.2s ease-in-out;
+
+    &:hover {
+        border-color: #CBD5E1 !important;
+        box-shadow: 0 8px 25px -4px rgba(15, 23, 42, 0.08) !important;
+    }
+}
+
+.seerbit-amount-card {
+    border: 2px solid #86EFAC !important;
+    background: linear-gradient(180deg, #F0FDF4 0%, #DCFCE7 100%) !important;
+    border-radius: 1rem !important;
+    box-shadow: 0 4px 20px -2px rgba(34, 197, 94, 0.08) !important;
+}
+
+// SeerBit Radiant Logo-Color Loading Beep
+.seerbit-radiant-beacon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0.5rem 1.25rem;
+    background: rgba(235, 62, 37, 0.05);
+    border-radius: 9999px;
+    border: 1px solid rgba(235, 62, 37, 0.15);
+
+    .seerbit-beep-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #FF7A59 0%, #EB3E25 100%);
+        box-shadow: 0 0 10px rgba(235, 62, 37, 0.55);
+        animation: seerbit-beep-radiant 1.4s ease-in-out infinite;
+
+        &:nth-child(2) {
+            animation-delay: 0.25s;
+            background: linear-gradient(135deg, #EB3E25 0%, #D82C14 100%);
+        }
+
+        &:nth-child(3) {
+            animation-delay: 0.5s;
+            background: linear-gradient(135deg, #D82C14 0%, #A81B08 100%);
+        }
+    }
+}
+
+@keyframes seerbit-beep-radiant {
+    0%, 100% {
+        transform: scale(0.8);
+        opacity: 0.35;
+        box-shadow: 0 0 4px rgba(235, 62, 37, 0.25);
+    }
+    50% {
+        transform: scale(1.4);
+        opacity: 1;
+        box-shadow: 0 0 16px rgba(235, 62, 37, 0.9), 0 0 6px #FF7A59;
+    }
+}
+
+// SeerBit Primary Brand Button (Warm Flame Red / Coral Gradient)
+.seerbit-btn-primary,
+.btn.seerbit-btn-primary {
+    background: linear-gradient(135deg, #FF5733 0%, #EB3E25 100%) !important;
+    border: 1px solid #EB3E25 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(235, 62, 37, 0.3) !important;
+    transition: all 0.2s ease-in-out !important;
+
+    *, span, i, strong {
+        color: #ffffff !important;
+    }
+
+    &:hover, &:focus {
+        background: linear-gradient(135deg, #F04520 0%, #D82C14 100%) !important;
+        border-color: #D82C14 !important;
+        box-shadow: 0 6px 18px rgba(235, 62, 37, 0.45) !important;
+        transform: translateY(-1px);
+        color: #ffffff !important;
+
+        *, span, i, strong {
+            color: #ffffff !important;
+        }
+    }
+
+    &:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(235, 62, 37, 0.35) !important;
+    }
+}
+
+// SeerBit Outline Primary Button
+.seerbit-btn-outline-primary,
+.btn.seerbit-btn-outline-primary {
+    background: transparent !important;
+    border: 1.5px solid #EB3E25 !important;
+    color: #EB3E25 !important;
+    transition: all 0.2s ease-in-out !important;
+
+    *, span, i, strong {
+        color: #EB3E25 !important;
+    }
+
+    &:hover, &:focus {
+        background: #EB3E25 !important;
+        border-color: #EB3E25 !important;
+        color: #ffffff !important;
+
+        *, span, i, strong {
+            color: #ffffff !important;
+        }
+    }
+}
+
+.seerbit-countdown-badge {
+    background: linear-gradient(135deg, #FF5733 0%, #EB3E25 100%) !important;
+}
+
+// Space-sustaining compact footer buttons
+.seerbit-modal-wrapper .modal-footer,
+.seerbit-incoming-payments-modal .modal-footer {
+    padding: 0.4rem 0.85rem !important;
+    min-height: auto !important;
+
+    .btn {
+        font-size: 0.875rem !important;
+        padding: 0.25rem 0.75rem !important;
+        line-height: 1.4 !important;
+    }
+}
+
+// Dark Button High-Contrast Overrides (Bulletproof white text)
+.seerbit-btn-dark,
+.btn.seerbit-btn-dark,
+.btn-dark,
+button.btn-dark,
+.modal-footer button.btn-dark {
+    background-color: #1f2937 !important;
+    border-color: #1f2937 !important;
+    color: #ffffff !important;
+
+    *, span, i, strong, em {
+        color: #ffffff !important;
+    }
+
+    &:hover, &:focus, &:active {
+        background-color: #111827 !important;
+        border-color: #111827 !important;
+        color: #ffffff !important;
+
+        *, span, i, strong, em {
+            color: #ffffff !important;
+        }
+    }
+}
+
+.seerbit-accordion-btn {
+    border-radius: 50% !important;
+    width: 38px;
+    height: 38px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease-in-out;
+
+    &:hover {
+        background-color: rgba(0, 0, 0, 0.08) !important;
+    }
+}

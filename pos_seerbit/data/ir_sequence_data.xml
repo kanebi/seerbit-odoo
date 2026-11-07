@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_seerbit_va_transaction" model="ir.sequence">
+            <field name="name">SeerBit VA Transaction</field>
+            <field name="code">seerbit.va.transaction</field>
+            <field name="prefix">SB/VA/%(year)s/</field>
+            <field name="padding">5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+    </data>
+</odoo>
+

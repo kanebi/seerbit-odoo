@@ -64,6 +64,18 @@
                                     Reconcile Seerbit payments with invoices for this branch.
                                 </div>
                             </setting>
+                            <setting string="POS VA Auto-Match Window (Minutes)">
+                                <field name="seerbit_pos_va_match_window_minutes"/>
+                                <div class="text-muted">
+                                    Allowable minutes between order creation and bank transfer for auto-matching (default: 30).
+                                </div>
+                            </setting>
+                            <setting string="Allow Partial VA Matches">
+                                <field name="seerbit_pos_va_allow_partial"/>
+                                <div class="text-muted">
+                                    Allow partial matches between transfer amounts and orders.
+                                </div>
+                            </setting>
                         </block>
                     </app>
                 </xpath>

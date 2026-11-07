@@ -173,6 +173,45 @@ class SeerbitAPI:
             _logger.error(f"Seerbit Get VA Payments Error: {e}")
             raise UserError(f"Failed to fetch VA payments: {str(e)}")
 
+    def create_dynamic_virtual_account(self, reference, amount, customer_name, customer_email, expiry_minutes=30, currency="NGN", country="NG"):
+        url = 'https://seerbitapi.com/api/v2/virtual-accounts'
+        payload = {
+            "publicKey": self.public_key,
+            "fullName": customer_name,
+            "email": customer_email,
+            "reference": reference,
+            "amount": str(amount),
+            "currency": currency,
+            "country": country,
+        }
+        try:
+            response = self._do_request('POST', url, json=payload)
+            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
+            response.raise_for_status()
+            res_data = response.json()
+            if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
+                return res_data['data']
+            raise UserError(f"Seerbit Error: {res_data.get('message', 'Unknown Error')}")
+        except UserError:
+            raise
+        except Exception as e:
+            _logger.error("Seerbit Create Dynamic VA Error: %s", e)
+            raise UserError(f"Failed to create Dynamic Virtual Account: {str(e)}")
+
+    def fetch_merchant_static_virtual_accounts(self):
+        url = f'https://seerbitapi.com/api/v2/virtual-accounts/list/{self.public_key}'
+        try:
+            response = self._do_request('GET', url)
+            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
+            response.raise_for_status()
+            res_data = response.json()
+            if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
+                return res_data['data']
+            return []
+        except Exception as e:
+            _logger.error("Seerbit Fetch Merchant VAs Error: %s", e)
+            raise UserError(f"Failed to fetch merchant Virtual Accounts: {str(e)}")
+
     # Invoicing
     def create_invoice(self, order_no, due_date, currency, receivers_name, customer_email, invoice_items):
         url = 'https://merchant.seerbitapi.com/invoice/create'

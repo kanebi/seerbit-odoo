@@ -6,12 +6,12 @@
         <field name="arch" type="xml">
             <form string="Virtual Account">
                 <header>
-                    <button name="action_generate_va" type="object" string="Generate VA" class="oe_highlight" invisible="account_number"/>
+                    <button name="action_generate_va" type="object" string="Generate VA" class="oe_highlight" invisible="account_number or va_type == 'pos_dynamic'"/>
                     <button name="action_refresh_balance" type="object" string="Refresh Balance" class="oe_highlight" invisible="not account_number"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_view_payments" type="object" class="oe_stat_button" icon="fa-money">
+                        <button name="action_view_payments" type="object" class="oe_stat_button" icon="fa-money" invisible="va_type != 'customer'">
                             <div class="o_stat_info">
                                 <span class="o_stat_value"><field name="balance" widget="monetary" options="{'currency_field': 'currency_id'}"/></span>
                                 <span class="o_stat_text">Payments</span>
@@ -25,24 +25,41 @@
                     </div>
                     <group>
                         <group>
-                            <field name="partner_id"/>
+                            <field name="va_type" readonly="account_number"/>
+                            <field name="partner_id" invisible="va_type != 'customer'"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                             <field name="bank_name"/>
                         </group>
                         <group>
                             <field name="account_number"/>
                             <field name="reference"/>
+                            <field name="balance" widget="monetary" options="{'currency_field': 'currency_id'}" invisible="va_type == 'customer'"/>
                             <field name="currency_id" invisible="1"/>
                         </group>
                     </group>
                     <notebook>
-                        <page string="Payments">
+                        <page string="Customer Payments" invisible="va_type != 'customer'">
                             <field name="payment_ids">
                                 <list>
                                     <field name="date"/>
                                     <field name="name"/>
                                     <field name="amount"/>
                                     <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="POS Transactions" invisible="va_type not in ('pos_static', 'pos_dynamic')">
+                            <field name="transaction_ids" readonly="1">
+                                <list>
+                                    <field name="payment_date"/>
+                                    <field name="name"/>
+                                    <field name="reference"/>
+                                    <field name="payer_name"/>
+                                    <field name="amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="status" widget="badge" decoration-success="status == 'successful'" decoration-danger="status == 'failed'"/>
+                                    <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'"/>
+                                    <field name="pos_order_ref"/>
+                                    <field name="currency_id" column_invisible="True"/>
                                 </list>
                             </field>
                         </page>
@@ -58,9 +75,10 @@
         <field name="model">seerbit.virtual.account</field>
         <field name="arch" type="xml">
             <list string="Virtual Accounts">
+                <field name="name"/>
+                <field name="va_type" widget="badge" decoration-info="va_type == 'customer'" decoration-primary="va_type == 'pos_static'" decoration-warning="va_type == 'pos_dynamic'"/>
                 <field name="partner_id"/>
                 <field name="company_id" groups="base.group_multi_company"/>
-                <field name="name"/>
                 <field name="bank_name"/>
                 <field name="account_number"/>
                 <field name="balance" widget="monetary" options="{'currency_field': 'currency_id'}"/>

@@ -70,6 +70,14 @@ class ResConfigSettings(models.TransientModel):
         related='company_id.seerbit_auto_reconcile',
         readonly=False,
     )
+    seerbit_pos_va_match_window_minutes = fields.Integer(
+        related='company_id.seerbit_pos_va_match_window_minutes',
+        readonly=False,
+    )
+    seerbit_pos_va_allow_partial = fields.Boolean(
+        related='company_id.seerbit_pos_va_allow_partial',
+        readonly=False,
+    )
 
     @api.depends('company_id', 'company_id.name')
     def _compute_seerbit_business_config_title(self):

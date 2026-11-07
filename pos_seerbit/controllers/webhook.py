@@ -1,6 +1,6 @@
 import logging
 import json
-from odoo import http
+from odoo import http, fields
 from odoo.http import request
 
 from odoo.addons.pos_seerbit.bus_notify import send_seerbit_ui_notification
@@ -307,47 +307,77 @@ class SeerbitWebhookController(http.Controller):
                     )
                     continue
 
-                if reference:
-                    existing_payment = request.env['account.payment'].sudo().search(
-                        [('move_id.ref', '=', reference)], limit=1
-                    )
-                    if existing_payment:
-                        if existing_payment.state == 'draft':
-                            seerbit_co = Company.seerbit_company(company)
-                            if seerbit_co.seerbit_auto_post:
-                                _logger.info(
-                                    "Seerbit Webhook: Found existing pending payment %s. Posting it...",
-                                    reference,
-                                )
-                                existing_payment.sudo().action_post()
-                        if existing_payment.state == 'in_process':
-                            va.sudo()._reconcile_seerbit_payment(existing_payment)
-
-                        _logger.info(
-                            "Seerbit Webhook: Payment %s already processed/posted.", reference
+                if va.va_type == 'customer':
+                    if reference:
+                        existing_payment = request.env['account.payment'].sudo().search(
+                            [('move_id.ref', '=', reference)], limit=1
                         )
-                        continue
+                        if existing_payment:
+                            if existing_payment.state == 'draft':
+                                seerbit_co = Company.seerbit_company(company)
+                                if seerbit_co.seerbit_auto_post:
+                                    _logger.info(
+                                        "Seerbit Webhook: Found existing pending payment %s. Posting it...",
+                                        reference,
+                                    )
+                                    existing_payment.sudo().action_post()
+                            if existing_payment.state == 'in_process':
+                                va.sudo()._reconcile_seerbit_payment(existing_payment)
 
-                try:
-                    va.sudo()._process_seerbit_va_payment(amount, reference or "Webhook Payment")
-                    send_seerbit_ui_notification(
-                        request.env,
-                        'Seerbit Payment Received',
-                        f'VA Payment of {amount} received for {va.partner_id.name}',
-                        record=va,
-                    )
-                    _logger.info(
-                        "Seerbit Webhook: Processed payment of %s for %s",
-                        amount, va.partner_id.name,
-                    )
-                except Exception as e:
-                    _logger.error("Seerbit Webhook Error processing payment: %s", e)
-                    send_seerbit_ui_notification(
-                        request.env,
-                        'Seerbit Webhook Error',
-                        f'Failed to process VA payment: {str(e)}',
-                        record=va,
-                    )
+                            _logger.info(
+                                "Seerbit Webhook: Payment %s already processed/posted.", reference
+                            )
+                            continue
+
+                    try:
+                        va.sudo()._process_seerbit_va_payment(amount, reference or "Webhook Payment")
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit Payment Received',
+                            f'VA Payment of {amount} received for {va.partner_id.name}',
+                            record=va,
+                        )
+                        _logger.info(
+                            "Seerbit Webhook: Processed payment of %s for %s",
+                            amount, va.partner_id.name,
+                        )
+                    except Exception as e:
+                        _logger.error("Seerbit Webhook Error processing payment: %s", e)
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit Webhook Error',
+                            f'Failed to process VA payment: {str(e)}',
+                            record=va,
+                        )
+                else:
+                    # POS Virtual Account Flow (pos_static / pos_dynamic)
+                    payer_name = payment_data.get('customerName') or payment_data.get('payerName') or 'Bank Customer'
+                    try:
+                        tx = request.env['seerbit.va.transaction'].sudo().register_inbound_transaction(
+                            va=va,
+                            reference=reference or f"VA_{account_number}_{fields.Datetime.now()}",
+                            amount=float(amount),
+                            payer_name=payer_name,
+                            raw_payload=payment_data,
+                        )
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit POS Payment Received',
+                            f'VA POS Payment of {amount} received from {payer_name} (Ref: {reference})',
+                            record=tx,
+                        )
+                        _logger.info(
+                            "Seerbit Webhook: Processed POS VA transaction %s for account %s",
+                            tx.reference, account_number,
+                        )
+                    except Exception as e:
+                        _logger.error("Seerbit Webhook Error processing POS VA transaction: %s", e)
+                        send_seerbit_ui_notification(
+                            request.env,
+                            'Seerbit Webhook Error',
+                            f'Failed to process POS VA payment: {str(e)}',
+                            record=va,
+                        )
 
             else:
                 _logger.warning(

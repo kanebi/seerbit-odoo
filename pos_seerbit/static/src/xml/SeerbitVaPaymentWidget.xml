@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-name="pos_seerbit.SeerbitVaPaymentWidget">
+        <div class="seerbit-va-payment-widget p-3 mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="fs-6 fw-bolder text-dark">
+                    <i class="fa fa-university me-1" style="color: #EB3E25;"/> Bank Transfer
+                </span>
+                <div class="d-flex align-items-center gap-2">
+                    <span t-if="isDynamic and hasGeneratedDynamicVa" 
+                          t-attf-class="badge #{state.isExpired ? 'bg-danger text-white' : (state.remainingSeconds &lt; 300 ? 'bg-danger text-white' : 'seerbit-countdown-badge text-white')} fw-bold px-2 py-1 small shadow-sm">
+                        <i t-attf-class="fa #{state.isExpired ? 'fa-times-circle' : 'fa-clock-o'} me-1"/>
+                        <t t-if="state.isExpired">Expired</t>
+                        <t t-else=""><t t-esc="formattedCountdown"/></t>
+                    </span>
+                    <span t-if="isDynamic" class="badge bg-warning text-dark fw-bold px-2 py-1 small">Order Account</span>
+                    <span t-else="" class="badge text-white fw-bold px-2 py-1 small" style="background-color: #1E293B; color: #ffffff !important;">Store Account</span>
+                </div>
+            </div>
+
+            <!-- Matched Confirmation Banner -->
+            <div t-if="isMatched" class="alert alert-success py-2 px-3 mb-3 rounded-3 border-0 shadow-sm d-flex align-items-center justify-content-between">
+                <span class="fw-bold small text-success"><i class="fa fa-check-circle me-1"/> Payment Confirmed &amp; Matched</span>
+                <span class="badge bg-success text-white small fw-bold">Done</span>
+            </div>
+
+            <!-- Pre-Generation State for Dynamic VA -->
+            <t t-if="isDynamic and !hasGeneratedDynamicVa">
+                <div class="p-3 mb-3 text-center rounded-3 shadow-sm" style="border: 1px solid #FCD5CE; background: #FFF9F8;">
+                    <div class="small fw-bolder text-uppercase" style="color: #64748B; font-size: 0.75rem;">TRANSFER AMOUNT</div>
+                    <div class="fs-2 fw-bolder font-monospace my-1" style="color: #EB3E25;">
+                        <t t-esc="expectedAmountFormatted"/>
+                    </div>
+                </div>
+
+                <!-- Spinner when generating -->
+                <div t-if="state.generatingDynamicVa" class="card bg-white p-3 mb-3 text-center shadow-sm border">
+                    <div class="spinner-border mb-2" style="width: 2rem; height: 2rem; color: #EB3E25;" role="status"/>
+                    <div class="small fw-bold text-dark">Generating bank account for this order...</div>
+                </div>
+
+                <!-- Error alert -->
+                <div t-elif="state.error" class="alert alert-danger p-2 mb-3 small">
+                    <div class="fw-bold text-danger mb-1">Could not get account details:</div>
+                    <div><t t-esc="state.error"/></div>
+                    <button class="btn btn-sm btn-outline-danger mt-2 fw-bold" t-on-click="generateDynamicVa">
+                        <i class="fa fa-repeat me-1"/> Try Again
+                    </button>
+                </div>
+
+                <!-- Generate Account Button -->
+                <button t-else="" 
+                        class="btn seerbit-btn-primary w-100 py-2 fw-bold fs-6 shadow-sm d-flex justify-content-center align-items-center rounded-pill"
+                        t-on-click="generateDynamicVa">
+                    <i class="fa fa-university me-2"/>
+                    <span>Generate Bank Account</span>
+                </button>
+            </t>
+
+            <!-- Dynamic VA Generated OR Static VA Available -->
+            <t t-else="">
+                <!-- Expired Alert for Dynamic VA -->
+                <div t-if="isDynamic and state.isExpired" class="alert alert-danger p-2 mb-3 border-0 shadow-sm text-center">
+                    <div class="fw-bold small text-danger">Bank Account Expired (30 Min Timeout)</div>
+                    <button class="btn btn-danger btn-sm w-100 py-1 mt-2 fw-bold shadow-sm" t-on-click="generateDynamicVa">
+                        <i class="fa fa-refresh me-1"/> Generate New Bank Account
+                    </button>
+                </div>
+
+                <!-- Account Details Card (Soft Border, Bank Name on Far Right) -->
+                <div class="card p-3 mb-2 seerbit-bank-card"
+                     t-att-style="state.isExpired ? 'opacity: 0.55;' : ''">
+                    <!-- Top Row: Account Number on Left, Bank Name on Far Right -->
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small fw-bolder text-uppercase" style="color: #64748B; font-size: 0.75rem;">ACCOUNT NUMBER</span>
+                        <div class="d-flex align-items-center fw-bolder fs-6 text-truncate" style="color: #0F172A;" t-att-title="bankName">
+                            <i class="fa fa-university me-1" style="color: #EB3E25;"/>
+                            <span><t t-esc="bankName"/></span>
+                        </div>
+                    </div>
+
+                    <!-- Center: Big Account Number -->
+                    <div class="my-1">
+                        <span t-attf-class="display-6 fw-bolder font-monospace #{state.isExpired ? 'text-decoration-line-through' : ''}" 
+                              style="letter-spacing: 2px; user-select: all; color: #0F172A;">
+                            <t t-esc="accountNumber"/>
+                        </span>
+                    </div>
+
+                    <!-- Bottom: Account Name -->
+                    <div class="pt-2 border-top mt-1" style="border-color: #F1F5F9 !important;">
+                        <span class="small fw-bolder text-uppercase d-block" style="color: #64748B; font-size: 0.7rem;">ACCOUNT NAME</span>
+                        <span class="small fw-bold text-truncate d-block" style="color: #1E293B;" t-att-title="accountName">
+                            <t t-esc="accountName"/>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Exact Amount to Pay Card (Soft Green Border) -->
+                <div class="p-2 mb-3 rounded-3 seerbit-amount-card d-flex justify-content-between align-items-center">
+                    <span class="small fw-bolder text-uppercase" style="color: #166534; font-size: 0.75rem;">Amount to Pay:</span>
+                    <span class="fs-4 fw-bolder font-monospace" style="color: #15803D;">
+                        <t t-esc="expectedAmountFormatted"/>
+                    </span>
+                </div>
+
+                <!-- Radiant Logo-Color Loading Beacon (Zero redundant texts) -->
+                <div t-if="!state.isExpired and !isMatched" class="d-flex align-items-center justify-content-center py-1 mb-2">
+                    <div class="seerbit-radiant-beacon">
+                        <span class="seerbit-beep-dot"></span>
+                        <span class="seerbit-beep-dot"></span>
+                        <span class="seerbit-beep-dot"></span>
+                    </div>
+                </div>
+
+                <!-- Check / Select Payment Button (Hidden if already matched) -->
+                <button t-if="!isMatched" 
+                        class="btn seerbit-btn-primary w-100 py-2 fw-bold fs-6 d-flex justify-content-center align-items-center shadow-sm"
+                        t-on-click="openIncomingPaymentsModal">
+                    <i class="fa fa-list-alt me-2"/>
+                    <span>Check / Select Bank Payment</span>
+                    <span t-if="state.unmatchedCount > 0" class="badge bg-white text-danger ms-2 fw-bold">
+                        <t t-esc="state.unmatchedCount"/> new
+                    </span>
+                </button>
+
+                <!-- Change Amount Button for Dynamic VA -->
+                <button t-if="isDynamic and !state.isExpired and !isMatched" 
+                        class="btn btn-outline-secondary w-100 py-1 fw-bold mt-2 shadow-sm small"
+                        style="color: #1F2937; border-color: #94A3B8;"
+                        t-on-click="resetDynamicVa">
+                    <i class="fa fa-undo me-1"/> Change Amount
+                </button>
+            </t>
+        </div>
+    </t>
+</templates>

@@ -6,10 +6,42 @@
         <field name="inherit_id" ref="point_of_sale.pos_payment_method_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='use_payment_terminal']" position="after">
-                <!-- Seerbit -->
+                <!-- Seerbit Terminal -->
                 <field name="seerbit_terminal_id" invisible="use_payment_terminal != 'seerbit'" required="use_payment_terminal == 'seerbit'"/>
                 <div class="text-muted" invisible="use_payment_terminal != 'seerbit'">
                     Public/secret keys are configured per company under Settings → Seerbit.
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='payment_method_type']" position="after">
+                <!-- Seerbit Virtual Account Transfers -->
+                <field name="seerbit_transfer_type" 
+                       invisible="payment_method_type != 'transfer'" 
+                       required="payment_method_type == 'transfer'"/>
+
+                <!-- Dynamic Transfer: Explanatory note (No static VA or generate button) -->
+                <div class="text-muted" invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'dynamic'">
+                    Unique virtual accounts will be generated automatically for each POS order during checkout.
+                </div>
+
+                <!-- Static Transfer: Assigned Virtual Account & Details -->
+                <field name="seerbit_va_id" 
+                       invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'static'" 
+                       context="{'default_va_type': 'pos_static', 'default_company_id': company_id}"/>
+                <field name="seerbit_va_bank_name" 
+                       invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'static' or not seerbit_va_id" 
+                       readonly="1"/>
+                <field name="seerbit_va_account_number" 
+                       invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'static' or not seerbit_va_id" 
+                       readonly="1"/>
+                <field name="seerbit_va_name" 
+                       invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'static' or not seerbit_va_id" 
+                       readonly="1"/>
+                <div invisible="payment_method_type != 'transfer' or seerbit_transfer_type != 'static' or seerbit_va_id" class="mt-2">
+                    <button name="action_generate_static_va" 
+                            type="object" 
+                            string="Generate Static VA" 
+                            class="btn btn-primary" 
+                            icon="fa-university"/>
                 </div>
             </xpath>
         </field>

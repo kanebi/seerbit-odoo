@@ -41,6 +41,16 @@ class ResCompany(models.Model):
         default=True,
         help='Reconcile Seerbit payments with invoices when received for this branch.',
     )
+    seerbit_pos_va_match_window_minutes = fields.Integer(
+        string="POS VA Auto-Match Window (Minutes)",
+        default=30,
+        help="Allowable time window between order creation and bank transfer arrival for automatic matching."
+    )
+    seerbit_pos_va_allow_partial = fields.Boolean(
+        string="Allow Partial VA Matches",
+        default=False,
+        help="Strict exact-match flag (per PRD: customer must transfer exact amount)."
+    )
 
     @api.constrains('seerbit_public_key')
     def _check_seerbit_public_key_unique(self):

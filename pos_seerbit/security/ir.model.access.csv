@@ -6,3 +6,6 @@ access_pos_seerbit_payment_link,pos.seerbit.payment.link,model_pos_seerbit_payme
 access_seerbit_virtual_account,seerbit.virtual.account,model_seerbit_virtual_account,base.group_user,1,1,1,1
 access_seerbit_payout,seerbit.payout,model_seerbit_payout,base.group_user,1,1,1,1
 access_seerbit_payout_otp_wizard,seerbit.payout.otp.wizard,model_seerbit_payout_otp_wizard,base.group_user,1,1,1,1
+access_seerbit_va_transaction_user,seerbit.va.transaction.user,model_seerbit_va_transaction,base.group_user,1,1,1,1
+access_seerbit_va_transaction_pos_user,seerbit.va.transaction.pos.user,model_seerbit_va_transaction,point_of_sale.group_pos_user,1,1,1,1
+access_seerbit_va_transaction_account_user,seerbit.va.transaction.account.user,model_seerbit_va_transaction,account.group_account_user,1,1,1,1

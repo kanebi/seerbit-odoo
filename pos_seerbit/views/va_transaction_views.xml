@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_seerbit_va_transaction_tree" model="ir.ui.view">
+        <field name="name">seerbit.va.transaction.list</field>
+        <field name="model">seerbit.va.transaction</field>
+        <field name="arch" type="xml">
+            <list string="SeerBit Inbound Transactions" create="false" edit="false">
+                <field name="payment_date"/>
+                <field name="name"/>
+                <field name="reference"/>
+                <field name="account_number"/>
+                <field name="payer_name"/>
+                <field name="amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                <field name="status" widget="badge" decoration-success="status == 'successful'" decoration-danger="status == 'failed'" decoration-warning="status == 'pending'"/>
+                <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'" decoration-muted="matching_status == 'cancelled'"/>
+                <field name="pos_order_ref"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="currency_id" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_seerbit_va_transaction_form" model="ir.ui.view">
+        <field name="name">seerbit.va.transaction.form</field>
+        <field name="model">seerbit.va.transaction</field>
+        <field name="arch" type="xml">
+            <form string="SeerBit Inbound Transaction" create="false" edit="false">
+                <header>
+                    <field name="status" widget="statusbar" statusbar_visible="pending,successful,failed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="reference" readonly="1"/>
+                        </h1>
+                        <h3>
+                            <field name="name" readonly="1"/>
+                        </h3>
+                    </div>
+                    <group>
+                        <group string="Transaction Details">
+                            <field name="amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                            <field name="payer_name"/>
+                            <field name="payment_date"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group string="Virtual Account Information">
+                            <field name="va_id"/>
+                            <field name="account_number"/>
+                        </group>
+                    </group>
+                    <group string="POS Settlement &amp; Matching">
+                        <group>
+                            <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'"/>
+                            <field name="pos_order_id"/>
+                            <field name="pos_order_ref"/>
+                        </group>
+                        <group>
+                            <field name="pos_session_id"/>
+                            <field name="pos_payment_id"/>
+                            <field name="matched_by_user_id"/>
+                            <field name="matched_at"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Raw Webhook Payload">
+                            <field name="raw_payload" widget="text" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_seerbit_va_transaction_search" model="ir.ui.view">
+        <field name="name">seerbit.va.transaction.search</field>
+        <field name="model">seerbit.va.transaction</field>
+        <field name="arch" type="xml">
+            <search string="Search Inbound Transactions">
+                <field name="reference"/>
+                <field name="payer_name"/>
+                <field name="account_number"/>
+                <field name="name"/>
+                <field name="pos_order_ref"/>
+                <filter name="unmatched" string="Unmatched" domain="[('matching_status', '=', 'unmatched')]"/>
+                <filter name="auto_matched" string="Auto-Matched" domain="[('matching_status', '=', 'auto_matched')]"/>
+                <filter name="manual_matched" string="Manually Matched" domain="[('matching_status', '=', 'manual_matched')]"/>
+                <separator/>
+                <filter name="today" string="Today" domain="[('payment_date', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                <group>
+                    <filter string="Virtual Account" name="group_by_va" domain="[]" context="{'group_by': 'va_id'}"/>
+                    <filter string="Matching Status" name="group_by_matching" domain="[]" context="{'group_by': 'matching_status'}"/>
+                    <filter string="Payment Date" name="group_by_date" domain="[]" context="{'group_by': 'payment_date:day'}"/>
+                    <filter string="Company" name="group_by_company" domain="[]" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_seerbit_va_transaction" model="ir.actions.act_window">
+        <field name="name">SeerBit Inbound Transactions</field>
+        <field name="res_model">seerbit.va.transaction</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_seerbit_va_transaction_search"/>
+        <field name="context">{'search_default_unmatched': 1}</field>
+    </record>
+
+    <menuitem id="menu_seerbit_va_transaction"
+              name="SeerBit VA Transactions"
+              parent="point_of_sale.menu_point_of_sale"
+              action="action_seerbit_va_transaction"
+              sequence="4"
+              groups="point_of_sale.group_pos_user,point_of_sale.group_pos_manager"/>
+</odoo>

@@ -12,7 +12,28 @@ class SeerbitVirtualAccount(models.Model):
     _description = 'Seerbit Virtual Account'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
-    partner_id = fields.Many2one('res.partner', string='Customer', required=True, ondelete='cascade')
+    partner_id = fields.Many2one(
+        'res.partner',
+        string='Customer / Entity',
+        required=False,
+        ondelete='cascade',
+        default=lambda self: self.env.company.partner_id
+    )
+    va_type = fields.Selection([
+        ('customer', 'Customer / Accounting'),
+        ('pos_static', 'POS Static Account'),
+        ('pos_dynamic', 'POS Dynamic Account')
+    ], string="VA Purpose Type", default='customer', required=True, index=True)
+    pos_payment_method_ids = fields.One2many(
+        'pos.payment.method',
+        'seerbit_va_id',
+        string="Linked POS Payment Methods"
+    )
+    transaction_ids = fields.One2many(
+        'seerbit.va.transaction',
+        'va_id',
+        string="Transactions"
+    )
     company_id = fields.Many2one(
         'res.company',
         string='Company',
@@ -51,19 +72,25 @@ class SeerbitVirtualAccount(models.Model):
         for va in self:
             balance = 0.0
             if va.account_number:
-                domain = [
-                    ('partner_id', '=', va.partner_id.id),
-                    ('seerbit_va_id', '=', va.id),
-                    ('payment_type', '=', 'inbound'),
-                    ('state', 'in', ['in_process', 'paid']),
-                ]
-                payments = self.env['account.payment'].search(domain)
-                for payment in payments:
-                    receivable_lines = payment.move_id.line_ids.filtered(lambda l: l.account_id.account_type == 'asset_receivable')
-                    if receivable_lines:
-                        balance += sum(abs(l.amount_residual) for l in receivable_lines)
-                    else:
-                        balance += payment.amount
+                if va.va_type == 'customer' and va.partner_id:
+                    domain = [
+                        ('partner_id', '=', va.partner_id.id),
+                        ('seerbit_va_id', '=', va.id),
+                        ('payment_type', '=', 'inbound'),
+                        ('state', 'in', ['in_process', 'paid']),
+                    ]
+                    payments = self.env['account.payment'].search(domain)
+                    for payment in payments:
+                        receivable_lines = payment.move_id.line_ids.filtered(lambda l: l.account_id.account_type == 'asset_receivable')
+                        if receivable_lines:
+                            balance += sum(abs(l.amount_residual) for l in receivable_lines)
+                        else:
+                            balance += payment.amount
+                else:
+                    unmatched = va.transaction_ids.filtered(
+                        lambda t: t.status == 'successful' and t.matching_status == 'unmatched'
+                    )
+                    balance = sum(unmatched.mapped('amount'))
             va.balance = balance
 
     @api.model
@@ -98,6 +125,30 @@ class SeerbitVirtualAccount(models.Model):
 
     def _fetch_and_process_payments(self, api_client):
         self.ensure_one()
+        if self.va_type in ('pos_static', 'pos_dynamic'):
+            # POS Flow: Spool into seerbit.va.transaction
+            try:
+                payload = api_client.get_virtual_account_payments(self.account_number)
+                Transaction = self.env['seerbit.va.transaction']
+                for p in payload:
+                    if p.get('gatewayCode') != '00':
+                        continue
+                    ref = p.get('paymentReference') or p.get('reference')
+                    amount = float(p.get('amount') or 0.0)
+                    payer = p.get('customerName') or p.get('payerName') or 'Bank Customer'
+
+                    Transaction.register_inbound_transaction(
+                        va=self,
+                        reference=ref,
+                        amount=amount,
+                        payer_name=payer,
+                        raw_payload=p
+                    )
+            except Exception as e:
+                _logger.error(f"Error fetching POS VA payments: {e}")
+                raise UserError(_("Failed to fetch VA payments: %s") % str(e))
+            return
+
         seerbit_co = self._seerbit_company()
         try:
             payload = api_client.get_virtual_account_payments(self.account_number)
@@ -159,43 +210,75 @@ class SeerbitVirtualAccount(models.Model):
         self.ensure_one()
         if self.account_number:
             raise UserError(_("Virtual Account is already generated."))
-        if not self.partner_id.email:
-            raise UserError(_("Customer must have an email address to create a Virtual Account."))
 
-        company = self.company_id or self.partner_id.company_id or self.env.company
+        partner = self.partner_id or self.company_id.partner_id or self.env.company.partner_id
+        if not partner.email:
+            raise UserError(_("An email address on '%s' is required to create a Virtual Account.") % partner.name)
+
+        company = self.company_id or partner.company_id or self.env.company
         if self.company_id != company:
             self.company_id = company
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
         import uuid
-        reference = f"VA_{self.partner_id.id}_{uuid.uuid4().hex[:8]}"
+
+        if self.va_type == 'pos_static':
+            reference = f"POS_STATIC_{self.id or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:4]}"
+            full_name = self.name or f"{company.name} - POS Static"
+        else:
+            reference = f"VA_{partner.id}_{uuid.uuid4().hex[:8]}"
+            full_name = partner.name
+
         try:
             res = api_client.create_virtual_account(
-                full_name=self.partner_id.name,
+                full_name=full_name,
                 reference=reference,
-                email=self.partner_id.email
+                email=partner.email
             )
-            payments_data = res.get('payments', {})
+            payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
 
             # Create a bank account record in Odoo
-            bank = self.env['res.bank'].search([('name', '=', payments_data.get('bankName'))], limit=1)
+            bank_name = payments_data.get('bankName', 'SeerBit Bank')
+            bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
             if not bank:
-                bank = self.env['res.bank'].create({'name': payments_data.get('bankName')})
+                bank = self.env['res.bank'].create({'name': bank_name})
 
             self.env['res.partner.bank'].create({
                 'acc_number': payments_data.get('accountNumber'),
-                'partner_id': self.partner_id.id,
+                'partner_id': partner.id,
                 'bank_id': bank.id,
             })
 
             self.write({
                 'company_id': company.id,
+                'partner_id': partner.id,
                 'reference': payments_data.get('reference', reference),
                 'account_number': payments_data.get('accountNumber'),
-                'bank_name': payments_data.get('bankName'),
-                'name': payments_data.get('walletName'),
+                'bank_name': bank_name,
+                'name': payments_data.get('walletName', full_name),
             })
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _("Success"),
+                    'message': _("Virtual Account (%s) generated: %s") % (
+                        bank_name, payments_data.get('accountNumber')
+                    ),
+                    'type': 'success',
+                    'sticky': False,
+                    'next': {
+                        'type': 'ir.actions.act_window',
+                        'res_model': 'seerbit.virtual.account',
+                        'res_id': self.id,
+                        'views': [(False, 'form')],
+                        'view_mode': 'form',
+                        'target': 'current',
+                    }
+                }
+            }
         except Exception as e:
             raise UserError(_("Error creating Virtual Account: %s" % str(e)))
 
