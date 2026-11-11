@@ -159,7 +159,8 @@ export class SeerbitVaPaymentWidget extends Component {
         if (this.isDynamic) {
             return this.state.dynamicVa?.va_id || this.paymentLine?.seerbit_dynamic_va_id;
         }
-        return this.paymentMethod?.seerbit_va_id;
+        const va = this.paymentMethod?.seerbit_va_id;
+        return Array.isArray(va) ? va[0] : (typeof va === "object" && va !== null ? va.id : va);
     }
 
     get accountNumber() {
@@ -277,8 +278,15 @@ export class SeerbitVaPaymentWidget extends Component {
         line.payment_ref_no = transaction.reference;
         line.cardholder_name = transaction.payer_name || "Bank Transfer";
         line.card_type = "Seerbit VA";
-        if (line.setReceiptInfo) {
-            line.setReceiptInfo(`\nBank Transfer Ref: ${transaction.reference}\nPayer: ${transaction.payer_name || 'N/A'}`);
+        const refToDisplay = transaction.reference;
+        const payerToDisplay = transaction.payer_name || 'N/A';
+        if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
+            const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
+            if (line.setReceiptInfo) {
+                line.setReceiptInfo(receiptText);
+            } else {
+                line.ticket = (line.ticket || '') + receiptText;
+            }
         }
         if (line.setPaymentStatus) {
             line.setPaymentStatus("done");

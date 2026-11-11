@@ -20,6 +20,7 @@ export class SeerbitVaModalPopup extends Component {
         this.dialog = useService("dialog");
         this.notification = useService("notification");
         this.orm = useService("orm");
+        this.busService = useService("bus_service");
         this.state = useState({
             copied: false,
             generatingDynamicVa: false,
@@ -33,11 +34,38 @@ export class SeerbitVaModalPopup extends Component {
             loadingPayments: false,
             syncingPayments: false,
             paymentsSearchQuery: "",
+            isSuccess: false,
+            successData: null,
+            successCountdown: 10,
         });
 
         this.countdownInterval = null;
+        this.successTimer = null;
+        this.statusPoller = null;
+        this._busHandler = null;
 
         onMounted(() => {
+            if (this.paymentLine) {
+                this.paymentLine._seerbit_modal_open = true;
+                this.paymentLine._seerbit_modal = this;
+            }
+            if (this.pos) {
+                this.pos._active_seerbit_modal = this;
+            }
+
+            // Periodic safety check: if paymentLine is matched by bus service or anything else,
+            // immediately trigger the 3-second success countdown and finish!
+            this.statusPoller = setInterval(() => {
+                if (this.paymentLine?.seerbit_is_matched && !this.state.isSuccess) {
+                    this.showSuccessAndClose({
+                        reference: this.paymentLine.seerbit_transaction_ref,
+                        payer_name: this.paymentLine.seerbit_payer_name,
+                        amount: this.expectedAmount,
+                        transaction_id: this.paymentLine.seerbit_va_transaction_id,
+                    });
+                }
+            }, 500);
+
             if (this.isDynamic) {
                 if (this.paymentLine?.seerbit_dynamic_account_number) {
                     this.state.dynamicVa = {
@@ -52,11 +80,53 @@ export class SeerbitVaModalPopup extends Component {
                 }
             } else {
                 this._checkPendingPaymentsCount();
+                this.fetchPayments();
+            }
+
+            // Real-time bus listener for incoming payments
+            if (this.busService) {
+                this._busHandler = (payload) => {
+                    const { type, data } = payload || {};
+                    if (!data || this.state.isSuccess) return;
+
+                    const cleanAcc = (acc) => String(acc || "").trim();
+                    const isForThisAccount = !data.account_number || cleanAcc(data.account_number) === cleanAcc(this.accountNumber);
+                    const lineAmt = this.expectedAmount;
+                    const isExactAmt = Math.abs(parseFloat(lineAmt) - parseFloat(data.amount || 0)) < 0.01;
+
+                    if (type === "seerbit_va_payment_matched" || (type === "seerbit_va_payment_received" && (this.isDynamic ? isForThisAccount : (isForThisAccount && isExactAmt)))) {
+                        this.showSuccessAndClose(data);
+                    } else if (isForThisAccount) {
+                        this.fetchPayments();
+                        this._checkPendingPaymentsCount();
+                    }
+                };
+                this.busService.subscribe("seerbit_va_notification", this._busHandler);
             }
         });
 
         onWillUnmount(() => {
             this._stopCountdownTimer();
+            if (this.statusPoller) {
+                clearInterval(this.statusPoller);
+                this.statusPoller = null;
+            }
+            if (this.successTimer) {
+                clearInterval(this.successTimer);
+                this.successTimer = null;
+            }
+            if (this.paymentLine) {
+                this.paymentLine._seerbit_modal_open = false;
+                if (this.paymentLine._seerbit_modal === this) {
+                    delete this.paymentLine._seerbit_modal;
+                }
+            }
+            if (this.pos && this.pos._active_seerbit_modal === this) {
+                this.pos._active_seerbit_modal = null;
+            }
+            if (this.busService && this._busHandler) {
+                this.busService.unsubscribe("seerbit_va_notification", this._busHandler);
+            }
         });
     }
 
@@ -87,7 +157,8 @@ export class SeerbitVaModalPopup extends Component {
         if (this.isDynamic) {
             return this.state.dynamicVa?.va_id || this.paymentLine?.seerbit_dynamic_va_id;
         }
-        return this.paymentMethod?.seerbit_va_id;
+        const va = this.paymentMethod?.seerbit_va_id;
+        return Array.isArray(va) ? va[0] : (typeof va === "object" && va !== null ? va.id : va);
     }
 
     get accountNumber() {
@@ -283,7 +354,7 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     async fetchPayments() {
-        if (!this.vaId) return;
+        if (!this.vaId || this.state.isSuccess) return;
         this.state.loadingPayments = true;
         try {
             const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
@@ -293,11 +364,16 @@ export class SeerbitVaModalPopup extends Component {
                 "get_unmatched_payments_for_pos",
                 [this.vaId, orderCreatedAt, 30]
             );
-            this.state.payments = data || [];
-            this.state.unmatchedCount = this.state.payments.length;
+            if (!this.state.isSuccess) {
+                this.state.payments = data || [];
+                this.state.unmatchedCount = this.state.payments.length;
+            }
         } catch (err) {
-            console.error("Failed to load incoming payments", err);
-            this.notification.add(_t("Could not retrieve incoming payments: ") + (err.message || err), { type: "danger" });
+            const errMsg = String(err?.message || err || "");
+            if (!this.state.isSuccess && !errMsg.toLowerCase().includes("destroyed")) {
+                console.error("Failed to load incoming payments", err);
+                this.notification.add(_t("Could not retrieve incoming payments: ") + errMsg, { type: "danger" });
+            }
         } finally {
             this.state.loadingPayments = false;
         }
@@ -331,7 +407,7 @@ export class SeerbitVaModalPopup extends Component {
             confirm: async () => {
                 await this._executePaymentSelection(payment);
             },
-            cancel: () => {},
+            cancel: () => { },
         });
     }
 
@@ -356,44 +432,137 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     _onPaymentConfirmed(transaction) {
+        this.showSuccessAndClose(transaction);
+    }
+
+    showSuccessAndClose(data) {
+        if (this.state.isSuccess) return;
         this._stopCountdownTimer();
+        if (this.statusPoller) {
+            clearInterval(this.statusPoller);
+            this.statusPoller = null;
+        }
+        this.state.isSuccess = true;
+        this.state.successData = data || {};
+        this.state.successCountdown = 10;
+
         const line = this.paymentLine;
-        if (!line) return;
-
-        line.seerbit_transaction_ref = transaction.reference;
-        line.seerbit_payer_name = transaction.payer_name;
-        line.seerbit_va_transaction_id = transaction.transaction_id;
-        line.seerbit_is_matched = true;
-        // Populate standard Odoo fields so references show up on orders, payment forms, and reports
-        line.transaction_id = transaction.reference;
-        line.payment_ref_no = transaction.reference;
-        line.cardholder_name = transaction.payer_name || "Bank Transfer";
-        line.card_type = "Seerbit VA";
-        if (line.setReceiptInfo) {
-            line.setReceiptInfo(`\nBank Transfer Ref: ${transaction.reference}\nPayer: ${transaction.payer_name || 'N/A'}`);
+        if (line) {
+            line._seerbit_modal_open = true;
+            if (data.reference) line.seerbit_transaction_ref = data.reference;
+            if (data.payer_name) line.seerbit_payer_name = data.payer_name;
+            if (data.transaction_id || data.id) line.seerbit_va_transaction_id = data.transaction_id || data.id;
+            line.seerbit_is_matched = true;
+            if (data.reference) {
+                line.transaction_id = data.reference;
+                line.payment_ref_no = data.reference;
+            }
+            line.cardholder_name = data.payer_name || line.cardholder_name || "Bank Transfer";
+            line.card_type = "Seerbit VA";
+            const refToDisplay = data.reference || line.seerbit_transaction_ref;
+            const payerToDisplay = data.payer_name || line.seerbit_payer_name || 'N/A';
+            if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
+                const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
+                if (line.setReceiptInfo) {
+                    line.setReceiptInfo(receiptText);
+                } else {
+                    line.ticket = (line.ticket || '') + receiptText;
+                }
+            }
+            if (line.setPaymentStatus) {
+                line.setPaymentStatus("done");
+            } else if (line.set_payment_status) {
+                line.set_payment_status("done");
+            }
         }
-        if (line.setPaymentStatus) {
-            line.setPaymentStatus("done");
-        } else if (line.set_payment_status) {
-            line.set_payment_status("done");
-        }
 
+        const amountFormatted = this.formatAmount(data?.amount || this.expectedAmount);
+        const payerName = data?.payer_name || line?.seerbit_payer_name || "Bank Customer";
         this.notification.add(
-            _t("Payment of %s confirmed from %s!", transaction.amount, transaction.payer_name),
+            _t("Payment of %s confirmed from %s!", amountFormatted, payerName),
             { type: "success" }
         );
 
-        if (this.props.close) {
-            this.props.close();
+        if (this.successTimer) {
+            clearInterval(this.successTimer);
+        }
+        this.successTimer = setInterval(() => {
+            if (this.state.successCountdown > 1) {
+                this.state.successCountdown -= 1;
+            } else {
+                this._finishSuccess();
+            }
+        }, 1000);
+    }
+
+    _finishSuccess() {
+        if (this.statusPoller) {
+            clearInterval(this.statusPoller);
+            this.statusPoller = null;
+        }
+        if (this.successTimer) {
+            clearInterval(this.successTimer);
+            this.successTimer = null;
+        }
+        const line = this.paymentLine;
+        if (line) {
+            line._seerbit_modal_open = false;
+            delete line._seerbit_modal;
+        }
+        if (this.pos && this.pos._active_seerbit_modal === this) {
+            this.pos._active_seerbit_modal = null;
+        }
+
+        try {
+            if (this.props.close) {
+                this.props.close();
+            } else if (this.env.dialogData?.close) {
+                this.env.dialogData.close();
+            }
+        } catch (e) {
+            console.error("Error closing modal after success:", e);
         }
 
         const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
         if (order && (order.isPaid ? order.isPaid() : order.is_paid?.())) {
-            if (this.props.validateOrder) {
-                this.props.validateOrder();
-            } else if (this.pos?.validateOrder) {
-                this.pos.validateOrder();
+            try {
+                if (this.props.validateOrder) {
+                    this.props.validateOrder();
+                } else if (this.pos?.validateOrder) {
+                    this.pos.validateOrder();
+                }
+            } catch (e) {
+                console.error("Error validating order:", e);
             }
+        }
+    }
+
+    _closeModal() {
+        this._stopCountdownTimer();
+        if (this.statusPoller) {
+            clearInterval(this.statusPoller);
+            this.statusPoller = null;
+        }
+        if (this.successTimer) {
+            clearInterval(this.successTimer);
+            this.successTimer = null;
+        }
+        const line = this.paymentLine;
+        if (line) {
+            line._seerbit_modal_open = false;
+            delete line._seerbit_modal;
+        }
+        if (this.pos && this.pos._active_seerbit_modal === this) {
+            this.pos._active_seerbit_modal = null;
+        }
+        try {
+            if (this.props.close) {
+                this.props.close();
+            } else if (this.env.dialogData?.close) {
+                this.env.dialogData.close();
+            }
+        } catch (e) {
+            console.error("Error closing modal:", e);
         }
     }
 

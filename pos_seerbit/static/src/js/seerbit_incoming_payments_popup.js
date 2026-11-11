@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, onMounted } from "@odoo/owl";
+import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
@@ -13,7 +13,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         close: Function,
         order: Object,
         paymentLine: Object,
-        vaId: { type: Number, optional: true },
+        vaId: { type: [Number, Array, Object], optional: true },
         accountNumber: { type: String, optional: true },
         expectedAmount: { type: Number, optional: true },
         onPaymentConfirmed: Function,
@@ -23,6 +23,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         this.orm = useService("orm");
         this.dialog = useService("dialog");
         this.notification = useService("notification");
+        this.busService = useService("bus_service");
         this.state = useState({
             payments: [],
             loading: true,
@@ -31,9 +32,33 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             selectedPayment: null,
         });
 
+        this.unsubscribeBus = null;
+
         onMounted(() => {
             this.fetchPayments();
+            if (this.busService) {
+                this.unsubscribeBus = this.busService.subscribe("seerbit_va_notification", (payload) => {
+                    const { type, data } = payload || {};
+                    if (!data) return;
+                    if (type === "seerbit_va_payment_received" || type === "seerbit_va_payment_matched") {
+                        if (!data.account_number || data.account_number === this.props.accountNumber) {
+                            this.fetchPayments();
+                        }
+                    }
+                });
+            }
         });
+
+        onWillUnmount(() => {
+            if (typeof this.unsubscribeBus === "function") {
+                this.unsubscribeBus();
+            }
+        });
+    }
+
+    get vaId() {
+        const v = this.props.vaId;
+        return Array.isArray(v) ? v[0] : (typeof v === "object" && v !== null ? v.id : v);
     }
 
     get filteredPayments() {
@@ -72,25 +97,28 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.props.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30]
             );
             this.state.payments = data || [];
         } catch (err) {
-            console.error("Failed to load incoming payments", err);
-            this.notification.add(_t("Could not retrieve incoming payments: ") + (err.message || err), { type: "danger" });
+            const errMsg = String(err?.message || err || "");
+            if (!errMsg.toLowerCase().includes("destroyed")) {
+                console.error("Failed to load incoming payments", err);
+                this.notification.add(_t("Could not retrieve incoming payments: ") + errMsg, { type: "danger" });
+            }
         } finally {
             this.state.loading = false;
         }
     }
 
     async syncLiveFromSeerbit() {
-        if (!this.props.vaId) return;
+        if (!this.vaId) return;
         this.state.syncing = true;
         try {
             await this.orm.call(
                 "seerbit.virtual.account",
                 "action_refresh_balance",
-                [[this.props.vaId]]
+                [[this.vaId]]
             );
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
@@ -111,7 +139,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             confirm: async () => {
                 await this._executePaymentSelection(payment);
             },
-            cancel: () => {},
+            cancel: () => { },
         });
     }
 

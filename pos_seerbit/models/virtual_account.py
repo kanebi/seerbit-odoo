@@ -133,9 +133,9 @@ class SeerbitVirtualAccount(models.Model):
                 for p in payload:
                     if p.get('gatewayCode') != '00':
                         continue
-                    ref = p.get('paymentReference') or p.get('reference')
+                    ref = p.get('paymentReference') or p.get('reference') or p.get('transactionRef')
                     amount = float(p.get('amount') or 0.0)
-                    payer = p.get('customerName') or p.get('payerName') or 'Bank Customer'
+                    payer = p.get('fullName') or p.get('fullname') or p.get('originatorName') or p.get('customerName') or p.get('payerName') or 'Bank Customer'
 
                     Transaction.register_inbound_transaction(
                         va=self,

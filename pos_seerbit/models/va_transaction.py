@@ -129,6 +129,8 @@ class SeerbitVaTransaction(models.Model):
         """
         existing = self.search([('reference', '=', reference)], limit=1)
         if existing:
+            if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
+                existing.write({'payer_name': payer_name})
             return existing
 
         vals = {
@@ -145,18 +147,54 @@ class SeerbitVaTransaction(models.Model):
         transaction = self.create(vals)
 
         if va.va_type in ('pos_static', 'pos_dynamic'):
-            # Attempt auto-match against open orders
-            self.env['pos.order']._attempt_va_auto_match(transaction)
+            # Check if an existing pos.payment or pos.order already references this transaction
+            payment = self.env['pos.payment'].search([
+                '|',
+                ('transaction_id', '=', reference),
+                ('seerbit_transaction_ref', '=', reference)
+            ], limit=1)
+            if payment and payment.pos_order_id:
+                order = payment.pos_order_id
+                transaction.write({
+                    'matching_status': 'auto_matched' if va.va_type == 'pos_dynamic' else 'manual_matched',
+                    'pos_order_id': order.id,
+                    'pos_order_ref': order.pos_reference or order.name,
+                    'pos_payment_id': payment.id,
+                    'pos_session_id': order.session_id.id,
+                    'matched_by_user_id': order.user_id.id or self.env.uid,
+                    'matched_at': fields.Datetime.now(),
+                })
+                payment.write({'seerbit_va_transaction_id': transaction.id})
+                if not order.seerbit_va_transaction_id:
+                    order.write({
+                        'seerbit_va_transaction_id': transaction.id,
+                        'seerbit_transaction_ref': reference,
+                        'seerbit_payer_name': payer_name or 'Bank Customer',
+                        'seerbit_amount_received': float(amount or 0.0),
+                    })
+            else:
+                # Attempt auto-match against open orders
+                self.env['pos.order']._attempt_va_auto_match(transaction)
 
         return transaction
 
     @api.model
-    def get_unmatched_payments_for_pos(self, va_id, order_created_at_str, limit=20):
+    def get_unmatched_payments_for_pos(self, va_id, order_created_at_str=None, limit=20):
         """
         RPC method called by POS Cashier to view available incoming payments.
-        Filters payments received from order creation time (with buffer) to now.
+        Lists unmatched payments for this virtual account.
         """
-        va = self.env['seerbit.virtual.account'].browse(va_id)
+        if isinstance(va_id, (list, tuple)):
+            va_id = va_id[0] if va_id else False
+        elif isinstance(va_id, dict):
+            va_id = va_id.get('id')
+
+        try:
+            va_id = int(va_id) if va_id else False
+        except (ValueError, TypeError):
+            va_id = False
+
+        va = self.env['seerbit.virtual.account'].browse(va_id) if va_id else self.env['seerbit.virtual.account']
         if not va.exists():
             return []
 
@@ -166,11 +204,10 @@ class SeerbitVaTransaction(models.Model):
             ('matching_status', '=', 'unmatched'),
         ]
 
-        if order_created_at_str:
+        if va.va_type == 'pos_dynamic' and order_created_at_str:
             try:
                 company = va.company_id
                 window_mins = company.seerbit_pos_va_match_window_minutes or 30
-                # Parse datetime string (supporting ISO format)
                 clean_str = order_created_at_str.replace('Z', '').split('.')[0]
                 if 'T' in clean_str:
                     order_dt = datetime.datetime.fromisoformat(clean_str)
@@ -180,6 +217,11 @@ class SeerbitVaTransaction(models.Model):
                 domain.append(('payment_date', '>=', fields.Datetime.to_string(buffer_dt)))
             except Exception as e:
                 _logger.warning("Failed to parse order_created_at_str %s: %s", order_created_at_str, e)
+        elif va.va_type == 'pos_static':
+            # For static store virtual accounts, display all unmatched payments from recent days (last 48 hours)
+            # so legitimate transfers before or during checkout are immediately visible to the cashier
+            cutoff_dt = fields.Datetime.now() - datetime.timedelta(hours=48)
+            domain.append(('payment_date', '>=', fields.Datetime.to_string(cutoff_dt)))
 
         records = self.search_read(
             domain=domain,
@@ -242,3 +284,30 @@ class SeerbitVaTransaction(models.Model):
             'payer_name': payer_name,
             'matched_at': fields.Datetime.to_string(now),
         }
+
+    def action_view_pos_order(self):
+        self.ensure_one()
+        if not self.pos_order_id:
+            return
+        return {
+            'name': _('POS Order'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'pos.order',
+            'res_id': self.pos_order_id.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_view_pos_payment(self):
+        self.ensure_one()
+        if not self.pos_payment_id:
+            return
+        return {
+            'name': _('POS Payment'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'pos.payment',
+            'res_id': self.pos_payment_id.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+

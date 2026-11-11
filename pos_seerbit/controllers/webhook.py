@@ -351,7 +351,7 @@ class SeerbitWebhookController(http.Controller):
                         )
                 else:
                     # POS Virtual Account Flow (pos_static / pos_dynamic)
-                    payer_name = payment_data.get('customerName') or payment_data.get('payerName') or 'Bank Customer'
+                    payer_name = payment_data.get('fullName') or payment_data.get('fullname') or payment_data.get('originatorName') or payment_data.get('customerName') or payment_data.get('payerName') or 'Bank Customer'
                     try:
                         tx = request.env['seerbit.va.transaction'].sudo().register_inbound_transaction(
                             va=va,

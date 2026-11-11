@@ -25,7 +25,7 @@ class PosPayment(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            ref = vals.get('seerbit_transaction_ref') or vals.get('transaction_id')
+            ref = vals.get('seerbit_transaction_ref') or vals.get('transaction_id') or vals.get('payment_ref_no')
             if ref:
                 if not vals.get('transaction_id'):
                     vals['transaction_id'] = ref
@@ -33,6 +33,10 @@ class PosPayment(models.Model):
                     vals['payment_ref_no'] = ref
                 if not vals.get('seerbit_transaction_ref'):
                     vals['seerbit_transaction_ref'] = ref
+                if not vals.get('seerbit_va_transaction_id'):
+                    tx = self.env['seerbit.va.transaction'].search([('reference', '=', ref)], limit=1)
+                    if tx:
+                        vals['seerbit_va_transaction_id'] = tx.id
             payer = vals.get('seerbit_payer_name') or vals.get('cardholder_name')
             if payer:
                 if not vals.get('cardholder_name'):

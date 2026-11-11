@@ -27,15 +27,57 @@
                             <t t-if="state.isExpired">Expired</t>
                             <t t-else=""><t t-esc="formattedCountdown"/></t>
                         </span>
-                        <button class="btn btn-close fs-6 p-2 ms-2" aria-label="Close" t-on-click="props.close"/>
+                        <button class="btn btn-close fs-6 p-2 ms-2" aria-label="Close" t-on-click="_closeModal"/>
                     </div>
                 </div>
 
                 <!-- Modal Body -->
                 <div class="modal-body p-4 flex-grow-1 d-flex flex-column justify-content-center overflow-y-auto" style="background-color: #F8FAFC;">
                     
+                    <!-- Success / Confirmed State -->
+                    <t t-if="state.isSuccess">
+                        <div class="card p-5 border-0 shadow rounded-4 bg-white text-center my-auto mx-auto" style="max-width: 520px;">
+                            <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle mx-auto shadow-sm" style="width: 80px; height: 80px; background-color: #DEF7EC;">
+                                <i class="fa fa-check fa-3x text-success"/>
+                            </div>
+                            <h3 class="fw-bolder text-dark mb-1">Payment Received!</h3>
+                            <p class="fs-6 text-muted mb-4">
+                                Bank transfer confirmed from <strong class="text-dark"><t t-esc="state.successData?.payer_name || 'Bank Customer'"/></strong>
+                            </p>
+
+                            <!-- Success Details Box -->
+                            <div class="p-3 mb-4 rounded-3 text-start shadow-sm" style="background-color: #F8FAFC; border: 1px solid #E2E8F0;">
+                                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                    <span class="text-muted small fw-semibold">Amount Received:</span>
+                                    <span class="fw-bolder text-success fs-5"><t t-esc="formatAmount(state.successData?.amount || expectedAmount)"/></span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                    <span class="text-muted small fw-semibold">Account Number:</span>
+                                    <span class="fw-bold font-monospace text-dark"><t t-esc="accountNumber"/></span>
+                                </div>
+                                <div t-if="state.successData?.reference" class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                    <span class="text-muted small fw-semibold">Reference:</span>
+                                    <span class="small font-monospace text-secondary"><t t-esc="state.successData.reference"/></span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center pt-2">
+                                    <span class="text-muted small fw-semibold">Status:</span>
+                                    <span class="badge bg-success fw-bold px-2 py-1"><i class="fa fa-check me-1"/>Verified &amp; Matched</span>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-items-center justify-content-center gap-3">
+                                <span class="text-muted small">
+                                    <i class="fa fa-clock-o me-1"/> Closing in <strong><t t-esc="state.successCountdown"/>s</strong>...
+                                </span>
+                                <button class="btn btn-success fw-bold px-4 py-2 shadow-sm rounded-pill" t-on-click="_finishSuccess">
+                                    <i class="fa fa-check me-1"/> Done
+                                </button>
+                            </div>
+                        </div>
+                    </t>
+
                     <!-- Pre-Generation State for Dynamic VA -->
-                    <t t-if="isDynamic and !hasGeneratedDynamicVa">
+                    <t t-elif="isDynamic and !hasGeneratedDynamicVa">
                         <div class="card p-5 border-0 shadow-sm rounded-4 bg-white text-center my-auto">
                             <div class="mb-3">
                                 <i class="fa fa-university fa-4x" style="color: #EB3E25;"/>
@@ -270,7 +312,7 @@
                 </div>
 
                 <!-- Modal Footer (Cozy theme, space-sustaining) -->
-                <div class="modal-footer d-flex justify-content-between align-items-center px-4 py-2 border-top bg-light">
+                <div t-if="!state.isSuccess" class="modal-footer d-flex justify-content-between align-items-center px-4 py-2 border-top bg-light">
                     <!-- Left: Change Amount (Dynamic only) -->
                     <div>
                         <button t-if="isDynamic and hasGeneratedDynamicVa and !state.isExpired" 
@@ -306,7 +348,7 @@
 
                         <button class="btn btn-sm btn-dark fw-bold px-3 py-1 seerbit-btn-dark shadow-sm" 
                                 style="background-color: #1F2937 !important; color: #ffffff !important; border-color: #1F2937 !important;"
-                                t-on-click="props.close">
+                                t-on-click="_closeModal">
                             <span style="color: #ffffff !important;">Close</span>
                         </button>
                     </div>

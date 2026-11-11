@@ -29,6 +29,18 @@
                     <field name="status" widget="statusbar" statusbar_visible="pending,successful,failed"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_pos_order" type="object" class="oe_stat_button" icon="fa-shopping-bag" invisible="not pos_order_id">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">POS Order</span>
+                            </div>
+                        </button>
+                        <button name="action_view_pos_payment" type="object" class="oe_stat_button" icon="fa-money" invisible="not pos_payment_id">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">POS Payment</span>
+                            </div>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1>
                             <field name="reference" readonly="1"/>
@@ -64,7 +76,7 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Raw Webhook Payload">
+                        <page string="Raw Webhook Payload" groups="base.group_no_one">
                             <field name="raw_payload" widget="text" readonly="1"/>
                         </page>
                     </notebook>
@@ -103,7 +115,7 @@
         <field name="res_model">seerbit.va.transaction</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="view_seerbit_va_transaction_search"/>
-        <field name="context">{'search_default_unmatched': 1}</field>
+        <field name="context">{}</field>
     </record>
 
     <menuitem id="menu_seerbit_va_transaction"

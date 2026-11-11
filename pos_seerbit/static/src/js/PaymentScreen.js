@@ -21,10 +21,22 @@ patch(PaymentScreenPaymentLines.prototype, {
         line.seerbit_expanded = !line.seerbit_expanded;
     },
     openSeerbitModal(line) {
+        if (!line || line._seerbit_modal_open) {
+            return;
+        }
+        line._seerbit_modal_open = true;
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
             validateOrder: () => this.props.validateOrder?.(),
+        }, {
+            onClose: () => {
+                line._seerbit_modal_open = false;
+                delete line._seerbit_modal;
+                if (this.pos && this.pos._active_seerbit_modal?.paymentLine === line) {
+                    this.pos._active_seerbit_modal = null;
+                }
+            }
         });
     },
     async selectLine(paymentline) {
@@ -36,7 +48,7 @@ patch(PaymentScreenPaymentLines.prototype, {
                 paymentline.seerbit_transaction_ref ||
                 paymentline.payment_status === "done"
             );
-            if (!isMatched) {
+            if (!isMatched && !paymentline._seerbit_modal_open) {
                 this.openSeerbitModal(paymentline);
             }
         }
@@ -78,6 +90,26 @@ patch(PaymentScreen.prototype, {
         });
     },
 
+    openSeerbitModal(line) {
+        if (!line || line._seerbit_modal_open) {
+            return;
+        }
+        line._seerbit_modal_open = true;
+        this.dialog.add(SeerbitVaModalPopup, {
+            paymentLine: line,
+            pos: this.pos,
+            validateOrder: () => this.validateOrder(),
+        }, {
+            onClose: () => {
+                line._seerbit_modal_open = false;
+                delete line._seerbit_modal;
+                if (this.pos && this.pos._active_seerbit_modal?.paymentLine === line) {
+                    this.pos._active_seerbit_modal = null;
+                }
+            }
+        });
+    },
+
     async addNewPaymentLine(paymentMethod) {
         if (paymentMethod?.payment_method_type === "transfer") {
             const amountDue = this.currentOrder.getDefaultAmountDueToPayIn ?
@@ -99,11 +131,7 @@ patch(PaymentScreen.prototype, {
                 selectedLine.seerbit_is_matched = false;
                 selectedLine.seerbit_expanded = false;
 
-                this.dialog.add(SeerbitVaModalPopup, {
-                    paymentLine: selectedLine,
-                    pos: this.pos,
-                    validateOrder: () => this.validateOrder(),
-                });
+                this.openSeerbitModal(selectedLine);
             }
         }
         return res;

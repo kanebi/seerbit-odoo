@@ -101,6 +101,7 @@ class PosOrder(models.Model):
                 'pos_order_id': matched_order.id,
                 'pos_order_ref': matched_order.pos_reference or matched_order.name,
                 'pos_session_id': matched_order.session_id.id,
+                'matched_by_user_id': matched_order.user_id.id or self.env.uid,
                 'matched_at': now,
             })
 
@@ -149,7 +150,7 @@ class PosOrder(models.Model):
             if not draft:
                 for payment in order.payment_ids:
                     if payment.payment_method_id.payment_method_type == 'transfer':
-                        if not payment.seerbit_va_transaction_id and not payment.seerbit_transaction_ref:
+                        if not payment.seerbit_va_transaction_id and not payment.seerbit_transaction_ref and not payment.transaction_id:
                             raise UserError(
                                 _("Order %s cannot be completed: Bank transfer payment (%s) has not been confirmed or matched.")
                                 % (order.pos_reference or order.name, payment.payment_method_id.name)
@@ -157,28 +158,45 @@ class PosOrder(models.Model):
         res = super()._process_saved_order(draft)
         for order in self:
             for payment in order.payment_ids:
-                ref = payment.seerbit_transaction_ref or payment.transaction_id or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.reference)
-                if payment.seerbit_va_transaction_id or ref:
-                    payer = payment.seerbit_payer_name or payment.cardholder_name or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.payer_name)
-                    order.write({
-                        'seerbit_va_transaction_id': payment.seerbit_va_transaction_id.id if payment.seerbit_va_transaction_id else False,
-                        'seerbit_transaction_ref': ref,
-                        'seerbit_payer_name': payer,
-                        'seerbit_amount_received': payment.amount,
-                    })
-                    if not payment.transaction_id and ref:
-                        payment.write({'transaction_id': ref, 'payment_ref_no': ref})
-                    if payment.seerbit_va_transaction_id:
-                        tx_vals = {
-                            'pos_order_id': order.id,
-                            'pos_order_ref': order.pos_reference or order.name,
-                            'pos_payment_id': payment.id,
-                            'pos_session_id': order.session_id.id,
-                        }
-                        if payment.seerbit_va_transaction_id.matching_status == 'unmatched':
-                            tx_vals['matching_status'] = 'manual_matched'
-                            tx_vals['matched_at'] = fields.Datetime.now()
-                        payment.seerbit_va_transaction_id.write(tx_vals)
+                if payment.payment_method_id.payment_method_type == 'transfer' or payment.seerbit_transaction_ref or payment.transaction_id:
+                    ref = payment.seerbit_transaction_ref or payment.transaction_id or payment.payment_ref_no or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.reference)
+                    tx = payment.seerbit_va_transaction_id
+                    if not tx and ref:
+                        tx = self.env['seerbit.va.transaction'].search([('reference', '=', ref)], limit=1)
+                        if tx:
+                            payment.write({
+                                'seerbit_va_transaction_id': tx.id,
+                                'seerbit_transaction_ref': ref,
+                                'transaction_id': ref,
+                                'payment_ref_no': ref,
+                            })
+
+                    if tx or ref:
+                        payer = payment.seerbit_payer_name or payment.cardholder_name or (tx and tx.payer_name) or 'Bank Customer'
+                        order.write({
+                            'seerbit_va_transaction_id': tx.id if tx else False,
+                            'seerbit_transaction_ref': ref or (tx and tx.reference),
+                            'seerbit_payer_name': payer,
+                            'seerbit_amount_received': payment.amount,
+                        })
+                        if not payment.transaction_id and ref:
+                            payment.write({'transaction_id': ref, 'payment_ref_no': ref})
+                        if tx:
+                            tx_vals = {
+                                'pos_order_id': order.id,
+                                'pos_order_ref': order.pos_reference or order.name,
+                                'pos_payment_id': payment.id,
+                                'pos_session_id': order.session_id.id,
+                            }
+                            if not tx.matched_by_user_id:
+                                tx_vals['matched_by_user_id'] = order.user_id.id or self.env.uid
+                            if tx.va_id.va_type == 'pos_dynamic' or tx.matching_status == 'unmatched':
+                                tx_vals['matching_status'] = 'auto_matched'
+                                if not tx.matched_at:
+                                    tx_vals['matched_at'] = fields.Datetime.now()
+                            elif not tx.matched_at:
+                                tx_vals['matched_at'] = fields.Datetime.now()
+                            tx.write(tx_vals)
                     break
         return res
 
