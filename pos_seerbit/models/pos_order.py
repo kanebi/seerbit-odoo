@@ -74,12 +74,16 @@ class PosOrder(models.Model):
 
         # 3. Query candidate POS orders in draft / awaiting payment state
         min_order_time = transaction.payment_date - datetime.timedelta(minutes=window_minutes)
-        candidate_orders = self.search([
+        order_domain = [
             ('session_id', 'in', open_sessions.ids),
             ('state', 'in', ['draft']),
             ('date_order', '>=', min_order_time),
-            ('amount_total', '=', transaction.amount),
-        ])
+        ]
+        if not company.seerbit_pos_va_allow_partial:
+            order_domain.append(('amount_total', '=', transaction.amount))
+        else:
+            order_domain.append(('amount_total', '>=', transaction.amount))
+        candidate_orders = self.search(order_domain)
 
         # 4. Strict Unambiguity Check (Dynamic VAs match directly on order reference)
         if transaction.va_id.va_type == 'pos_dynamic':
@@ -153,13 +157,17 @@ class PosOrder(models.Model):
         res = super()._process_saved_order(draft)
         for order in self:
             for payment in order.payment_ids:
-                if payment.seerbit_va_transaction_id or payment.seerbit_transaction_ref:
+                ref = payment.seerbit_transaction_ref or payment.transaction_id or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.reference)
+                if payment.seerbit_va_transaction_id or ref:
+                    payer = payment.seerbit_payer_name or payment.cardholder_name or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.payer_name)
                     order.write({
                         'seerbit_va_transaction_id': payment.seerbit_va_transaction_id.id if payment.seerbit_va_transaction_id else False,
-                        'seerbit_transaction_ref': payment.seerbit_transaction_ref,
-                        'seerbit_payer_name': payment.seerbit_payer_name,
+                        'seerbit_transaction_ref': ref,
+                        'seerbit_payer_name': payer,
                         'seerbit_amount_received': payment.amount,
                     })
+                    if not payment.transaction_id and ref:
+                        payment.write({'transaction_id': ref, 'payment_ref_no': ref})
                     if payment.seerbit_va_transaction_id:
                         tx_vals = {
                             'pos_order_id': order.id,

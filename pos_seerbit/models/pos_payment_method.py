@@ -238,10 +238,14 @@ class PosPaymentMethod(models.Model):
         records = super().create(vals_list)
         for record in records:
             if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
-                try:
-                    record._generate_static_va()
-                except Exception as e:
-                    _logger.warning("Could not auto-generate Static Virtual Account on create for %s: %s", record.name, e)
+                # Safely auto-link an existing static VA for this company if one already exists
+                existing_va = self.env['seerbit.virtual.account'].search([
+                    ('company_id', '=', record.company_id.id or self.env.company.id),
+                    ('va_type', '=', 'pos_static'),
+                    ('account_number', '!=', False)
+                ], limit=1)
+                if existing_va:
+                    record.seerbit_va_id = existing_va.id
             elif record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
                 record.seerbit_va_id = False
         return records
@@ -252,10 +256,14 @@ class PosPaymentMethod(models.Model):
             if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
                 record.seerbit_va_id = False
             elif record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
-                try:
-                    record._generate_static_va()
-                except Exception as e:
-                    _logger.warning("Could not auto-generate Static Virtual Account on write for %s: %s", record.name, e)
+                # Safely auto-link an existing static VA for this company if one already exists
+                existing_va = self.env['seerbit.virtual.account'].search([
+                    ('company_id', '=', record.company_id.id or self.env.company.id),
+                    ('va_type', '=', 'pos_static'),
+                    ('account_number', '!=', False)
+                ], limit=1)
+                if existing_va:
+                    record.seerbit_va_id = existing_va.id
         return res
 
     @api.onchange('payment_method_type', 'seerbit_transfer_type')
@@ -269,7 +277,7 @@ class PosPaymentMethod(models.Model):
     def _generate_static_va(self):
         """
         Internal generator to create and link a Static Virtual Account via SeerBit API.
-        Used on save (create/write) or via button action for static transfer payment methods.
+        Used via button action for static transfer payment methods.
         Dynamic transfer methods NEVER generate a VA on save/creation.
         """
         self.ensure_one()
@@ -285,8 +293,7 @@ class PosPaymentMethod(models.Model):
 
         partner = company.partner_id
         if not partner.email:
-            _logger.warning("Company '%s' must have an email address to create a Virtual Account.", company.name)
-            return False
+            raise UserError(_("The company '%s' must have an email address to create a Virtual Account.") % company.name)
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
@@ -295,39 +302,70 @@ class PosPaymentMethod(models.Model):
         va_ref = f"POS_STATIC_{self.id or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:4]}"
         va_name = f"{company.name} - {self.name}"
 
-        res = api_client.create_virtual_account(
-            full_name=va_name,
-            reference=va_ref,
-            email=partner.email,
-        )
-        payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
+        try:
+            with self.env.cr.savepoint():
+                res = api_client.create_virtual_account(
+                    full_name=va_name,
+                    reference=va_ref,
+                    email=partner.email,
+                )
+                payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
+                account_number = payments_data.get('accountNumber') if isinstance(payments_data, dict) else False
+                bank_name = payments_data.get('bankName', 'SeerBit Bank') if isinstance(payments_data, dict) else 'SeerBit Bank'
 
-        # Create or fetch bank
-        bank_name = payments_data.get('bankName', 'SeerBit Bank')
-        bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
-        if not bank:
-            bank = self.env['res.bank'].create({'name': bank_name})
+                # If SeerBit did not return an account number (e.g. S12: customer already has a static account)
+                if not account_number:
+                    err_msg = res.get('message') or (payments_data.get('message') if isinstance(payments_data, dict) else '')
+                    _logger.warning("Seerbit did not return account number for %s: %s", va_name, err_msg)
+                    # Look up existing static VA for this company
+                    existing_va = self.env['seerbit.virtual.account'].search([
+                        ('company_id', '=', company.id),
+                        ('va_type', '=', 'pos_static'),
+                        ('account_number', '!=', False)
+                    ], limit=1)
+                    if existing_va:
+                        self.seerbit_va_id = existing_va.id
+                        return existing_va
+                    raise UserError(_("SeerBit could not generate an account number: %s") % (err_msg or _("Please contact support.")))
 
-        # Register in partner bank
-        self.env['res.partner.bank'].create({
-            'acc_number': payments_data.get('accountNumber'),
-            'partner_id': partner.id,
-            'bank_id': bank.id,
-        })
+                # Create or fetch bank
+                bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
+                if not bank:
+                    bank = self.env['res.bank'].create({'name': bank_name})
 
-        # Create existing VA model record
-        va_record = self.env['seerbit.virtual.account'].create({
-            'name': payments_data.get('walletName', va_name),
-            'company_id': company.id,
-            'partner_id': partner.id,
-            'reference': payments_data.get('reference', va_ref),
-            'account_number': payments_data.get('accountNumber'),
-            'bank_name': bank_name,
-            'va_type': 'pos_static',
-        })
+                # Register in partner bank (only when valid account number exists)
+                self.env['res.partner.bank'].create({
+                    'acc_number': account_number,
+                    'partner_id': partner.id,
+                    'bank_id': bank.id,
+                })
 
-        self.seerbit_va_id = va_record.id
-        return va_record
+                # Create VA model record
+                va_record = self.env['seerbit.virtual.account'].create({
+                    'name': payments_data.get('walletName', va_name),
+                    'company_id': company.id,
+                    'partner_id': partner.id,
+                    'reference': payments_data.get('reference', va_ref),
+                    'account_number': account_number,
+                    'bank_name': bank_name,
+                    'va_type': 'pos_static',
+                })
+
+                self.seerbit_va_id = va_record.id
+                return va_record
+        except UserError:
+            raise
+        except Exception as e:
+            _logger.error("Failed to generate Static Virtual Account: %s", e)
+            existing_va = self.env['seerbit.virtual.account'].search([
+                ('company_id', '=', company.id),
+                ('va_type', '=', 'pos_static'),
+                ('account_number', '!=', False)
+            ], limit=1)
+            if existing_va:
+                self.seerbit_va_id = existing_va.id
+                return existing_va
+            raise UserError(_("Could not generate Virtual Account: %s") % str(e))
 
     def action_generate_static_va(self):
         """

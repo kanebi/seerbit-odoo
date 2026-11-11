@@ -364,6 +364,14 @@ export class SeerbitVaModalPopup extends Component {
         line.seerbit_payer_name = transaction.payer_name;
         line.seerbit_va_transaction_id = transaction.transaction_id;
         line.seerbit_is_matched = true;
+        // Populate standard Odoo fields so references show up on orders, payment forms, and reports
+        line.transaction_id = transaction.reference;
+        line.payment_ref_no = transaction.reference;
+        line.cardholder_name = transaction.payer_name || "Bank Transfer";
+        line.card_type = "Seerbit VA";
+        if (line.setReceiptInfo) {
+            line.setReceiptInfo(`\nBank Transfer Ref: ${transaction.reference}\nPayer: ${transaction.payer_name || 'N/A'}`);
+        }
         if (line.setPaymentStatus) {
             line.setPaymentStatus("done");
         } else if (line.set_payment_status) {

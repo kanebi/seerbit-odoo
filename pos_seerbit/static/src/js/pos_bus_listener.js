@@ -36,6 +36,14 @@ export const posSeerbitBusService = {
                         line.seerbit_payer_name = data.payer_name;
                         line.seerbit_va_transaction_id = data.transaction_id;
                         line.seerbit_is_matched = true;
+                        // Populate standard Odoo fields so references show up on orders, payment forms, and reports
+                        line.transaction_id = data.reference;
+                        line.payment_ref_no = data.reference;
+                        line.cardholder_name = data.payer_name || "Bank Transfer";
+                        line.card_type = "Seerbit VA";
+                        if (line.setReceiptInfo) {
+                            line.setReceiptInfo(`\nBank Transfer Ref: ${data.reference}\nPayer: ${data.payer_name || 'N/A'}`);
+                        }
                         if (line.setPaymentStatus) {
                             line.setPaymentStatus("done");
                         } else if (line.set_payment_status) {
