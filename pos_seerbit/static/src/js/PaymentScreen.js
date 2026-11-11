@@ -47,10 +47,10 @@ patch(PosOrder.prototype, {
     canBeValidated() {
         const hasUnmatchedTransfer = (this.payment_ids || []).some(
             (line) => line.payment_method_id?.payment_method_type === "transfer" &&
-                      !line.seerbit_va_transaction_id &&
-                      !line.seerbit_transaction_ref &&
-                      !line.seerbit_is_matched &&
-                      line.payment_status !== "done"
+                !line.seerbit_va_transaction_id &&
+                !line.seerbit_transaction_ref &&
+                !line.seerbit_is_matched &&
+                line.payment_status !== "done"
         );
         if (hasUnmatchedTransfer) {
             return false;
@@ -80,8 +80,8 @@ patch(PaymentScreen.prototype, {
 
     async addNewPaymentLine(paymentMethod) {
         if (paymentMethod?.payment_method_type === "transfer") {
-            const amountDue = this.currentOrder.getDefaultAmountDueToPayIn ? 
-                this.currentOrder.getDefaultAmountDueToPayIn(paymentMethod) : 
+            const amountDue = this.currentOrder.getDefaultAmountDueToPayIn ?
+                this.currentOrder.getDefaultAmountDueToPayIn(paymentMethod) :
                 (this.currentOrder.get_due ? this.currentOrder.get_due() : this.currentOrder.totalDue);
             if (amountDue <= 1.0) {
                 this.dialog.add(AlertDialog, {
@@ -126,10 +126,10 @@ patch(PaymentScreen.prototype, {
     async validateOrder(isForceValidate = false) {
         const unmatchedTransfer = this.paymentLines.find(
             (line) => line.payment_method_id?.payment_method_type === "transfer" &&
-                      !line.seerbit_va_transaction_id &&
-                      !line.seerbit_transaction_ref &&
-                      !line.seerbit_is_matched &&
-                      line.payment_status !== "done"
+                !line.seerbit_va_transaction_id &&
+                !line.seerbit_transaction_ref &&
+                !line.seerbit_is_matched &&
+                line.payment_status !== "done"
         );
         if (unmatchedTransfer) {
             this.dialog.add(AlertDialog, {
