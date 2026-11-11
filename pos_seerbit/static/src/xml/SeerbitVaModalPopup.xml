@@ -102,9 +102,6 @@
                                             <div class="display-3 fw-bolder font-monospace my-3 text-truncate" style="color: #15803D; letter-spacing: -1px;">
                                                 <t t-esc="expectedAmountFormatted"/>
                                             </div>
-                                            <div class="badge bg-white text-success border border-success-subtle fw-bold px-3 py-1 fs-6 shadow-sm">
-                                                <i class="fa fa-check-circle me-1"/> Exact amount required
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -165,9 +162,6 @@
                                         <div class="fs-2 fw-bolder font-monospace my-1 text-truncate" style="color: #15803D;">
                                             <t t-esc="expectedAmountFormatted"/>
                                         </div>
-                                        <span class="badge bg-white text-success border border-success-subtle fw-bold small">
-                                            Exact amount required
-                                        </span>
                                     </div>
 
                                     <!-- Squeezed Bank Account Card -->

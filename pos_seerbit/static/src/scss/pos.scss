@@ -174,10 +174,16 @@ $seerbit-transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 .modal:has(.seerbit-incoming-modal-content) .modal-dialog,
 .modal-dialog:has(.seerbit-incoming-modal-content),
 .modal:has(.seerbit-incoming-payments-modal) .modal-dialog,
-.modal-dialog:has(.seerbit-incoming-payments-modal) {
+.modal-dialog:has(.seerbit-incoming-payments-modal),
+.o_dialog:has(.seerbit-va-modal-content) .modal-dialog,
+.o_dialog:has(.seerbit-modal-wrapper) .modal-dialog {
     width: 90vw !important;
     max-width: 90vw !important;
-    margin: 1rem auto !important;
+    height: 82vh !important;
+    max-height: 88vh !important;
+    margin: 1.5rem auto !important;
+    display: flex !important;
+    align-items: center !important;
 }
 
 // Completely suppress unneeded native Odoo headers and empty footers
@@ -202,19 +208,31 @@ $seerbit-transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 .seerbit-incoming-modal-content {
     width: 100% !important;
     max-width: 100% !important;
-    height: 70vh !important;
-    min-height: 540px !important;
+    height: 82vh !important;
+    min-height: 560px !important;
     max-height: 88vh !important;
     margin: auto;
-    border-radius: 0.75rem !important;
+    border-radius: 0.85rem !important;
+    display: flex !important;
+    flex-direction: column !important;
     overflow: hidden !important;
-    box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.45) !important;
-    border: 1px solid rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
     background-color: #ffffff !important;
+
+    > main.modal-body {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 100% !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+    }
 
     .modal-content {
         height: 100% !important;
-        border-radius: 0.75rem !important;
+        border-radius: 0.85rem !important;
         overflow: hidden !important;
         border: none !important;
     }
