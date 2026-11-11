@@ -238,14 +238,10 @@ class PosPaymentMethod(models.Model):
         records = super().create(vals_list)
         for record in records:
             if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
-                # Safely auto-link an existing static VA for this company if one already exists
-                existing_va = self.env['seerbit.virtual.account'].search([
-                    ('company_id', '=', record.company_id.id or self.env.company.id),
-                    ('va_type', '=', 'pos_static'),
-                    ('account_number', '!=', False)
-                ], limit=1)
-                if existing_va:
-                    record.seerbit_va_id = existing_va.id
+                try:
+                    record._generate_static_va()
+                except Exception as e:
+                    _logger.warning("Could not auto-generate Static Virtual Account on create for %s: %s", record.name, e)
             elif record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
                 record.seerbit_va_id = False
         return records
@@ -256,14 +252,11 @@ class PosPaymentMethod(models.Model):
             if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
                 record.seerbit_va_id = False
             elif record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
-                # Safely auto-link an existing static VA for this company if one already exists
-                existing_va = self.env['seerbit.virtual.account'].search([
-                    ('company_id', '=', record.company_id.id or self.env.company.id),
-                    ('va_type', '=', 'pos_static'),
-                    ('account_number', '!=', False)
-                ], limit=1)
-                if existing_va:
-                    record.seerbit_va_id = existing_va.id
+                # If static VA is not set, generate a new dedicated VA on save
+                try:
+                    record._generate_static_va()
+                except Exception as e:
+                    _logger.warning("Could not auto-generate Static Virtual Account on write for %s: %s", record.name, e)
         return res
 
     @api.onchange('payment_method_type', 'seerbit_transfer_type')
@@ -274,16 +267,16 @@ class PosPaymentMethod(models.Model):
         elif self.seerbit_transfer_type == 'dynamic':
             self.seerbit_va_id = False
 
-    def _generate_static_va(self):
+    def _generate_static_va(self, force=False):
         """
-        Internal generator to create and link a Static Virtual Account via SeerBit API.
-        Used via button action for static transfer payment methods.
+        Creates and links a new Static Virtual Account via SeerBit API.
+        Used on save (create/write) when seerbit_va_id is empty, or explicitly via button action.
         Dynamic transfer methods NEVER generate a VA on save/creation.
         """
         self.ensure_one()
         if self.payment_method_type != 'transfer' or self.seerbit_transfer_type != 'static':
             return False
-        if self.seerbit_va_id and self.seerbit_va_id.account_number:
+        if not force and self.seerbit_va_id and self.seerbit_va_id.account_number:
             return self.seerbit_va_id
 
         company = self.company_id or self.env.company
@@ -292,48 +285,40 @@ class PosPaymentMethod(models.Model):
             return False
 
         partner = company.partner_id
-        if not partner.email:
-            raise UserError(_("The company '%s' must have an email address to create a Virtual Account.") % company.name)
+        email = partner.email or 'pos@seerbit.com'
+        email_user, email_domain = email.split('@') if '@' in email else (email, 'seerbit.com')
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
 
         import uuid
-        va_ref = f"POS_STATIC_{self.id or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:4]}"
+        tag = uuid.uuid4().hex[:6]
+        va_ref = f"POS_STATIC_{self.id or tag}_{uuid.uuid4().hex[:4]}"
         va_name = f"{company.name} - {self.name}"
+        # Use unique email per static account so SeerBit reserves a dedicated customer account
+        unique_email = f"{email_user}+pos_{self.id or tag}@{email_domain}"
 
         try:
             with self.env.cr.savepoint():
                 res = api_client.create_virtual_account(
                     full_name=va_name,
                     reference=va_ref,
-                    email=partner.email,
+                    email=unique_email,
                 )
                 payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
                 account_number = payments_data.get('accountNumber') if isinstance(payments_data, dict) else False
                 bank_name = payments_data.get('bankName', 'SeerBit Bank') if isinstance(payments_data, dict) else 'SeerBit Bank'
 
-                # If SeerBit did not return an account number (e.g. S12: customer already has a static account)
                 if not account_number:
                     err_msg = res.get('message') or (payments_data.get('message') if isinstance(payments_data, dict) else '')
-                    _logger.warning("Seerbit did not return account number for %s: %s", va_name, err_msg)
-                    # Look up existing static VA for this company
-                    existing_va = self.env['seerbit.virtual.account'].search([
-                        ('company_id', '=', company.id),
-                        ('va_type', '=', 'pos_static'),
-                        ('account_number', '!=', False)
-                    ], limit=1)
-                    if existing_va:
-                        self.seerbit_va_id = existing_va.id
-                        return existing_va
-                    raise UserError(_("SeerBit could not generate an account number: %s") % (err_msg or _("Please contact support.")))
+                    raise UserError(_("SeerBit did not return an account number: %s") % (err_msg or _("Please check company credentials.")))
 
                 # Create or fetch bank
                 bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
                 if not bank:
                     bank = self.env['res.bank'].create({'name': bank_name})
 
-                # Register in partner bank (only when valid account number exists)
+                # Register in partner bank
                 self.env['res.partner.bank'].create({
                     'acc_number': account_number,
                     'partner_id': partner.id,
@@ -356,16 +341,8 @@ class PosPaymentMethod(models.Model):
         except UserError:
             raise
         except Exception as e:
-            _logger.error("Failed to generate Static Virtual Account: %s", e)
-            existing_va = self.env['seerbit.virtual.account'].search([
-                ('company_id', '=', company.id),
-                ('va_type', '=', 'pos_static'),
-                ('account_number', '!=', False)
-            ], limit=1)
-            if existing_va:
-                self.seerbit_va_id = existing_va.id
-                return existing_va
-            raise UserError(_("Could not generate Virtual Account: %s") % str(e))
+            _logger.error("Failed to generate Static Virtual Account for %s: %s", self.name, e)
+            raise UserError(_("Failed to generate Virtual Account from SeerBit: %s") % str(e))
 
     def action_generate_static_va(self):
         """
@@ -383,7 +360,7 @@ class PosPaymentMethod(models.Model):
         if not partner.email:
             raise UserError(_("The company '%s' must have an email address to create a Virtual Account.") % company.name)
 
-        va = self._generate_static_va()
+        va = self._generate_static_va(force=True)
         if not va:
             raise UserError(_("Failed to generate Virtual Account. Please verify your company SeerBit configuration."))
 
@@ -397,14 +374,7 @@ class PosPaymentMethod(models.Model):
                 ),
                 'type': 'success',
                 'sticky': False,
-                'next': {
-                    'type': 'ir.actions.act_window',
-                    'res_model': 'pos.payment.method',
-                    'res_id': self.id,
-                    'views': [(False, 'form')],
-                    'view_mode': 'form',
-                    'target': 'current',
-                }
+                'next': {'type': 'ir.actions.client', 'tag': 'reload'},
             }
         }
 
