@@ -29,6 +29,7 @@ class SeerbitWebhookController(http.Controller):
           2. Invoice payments       (matched by invoiceNumber)
           3. Virtual Account payments (matched by accountNumber)
         """
+        ack_reference = request.httprequest.headers.get('X-Expected-Ack-Reference', '')
         try:
             payload = json.loads(request.httprequest.data)
         except Exception as e:
@@ -269,4 +270,10 @@ class SeerbitWebhookController(http.Controller):
             else:
                 _logger.warning(f"Seerbit Webhook: Unrecognized payment type — no paymentLinkId, invoiceNumber, or accountNumber. Payload: {payment_data}")
 
-        return request.make_response(json.dumps({"status": "success", "message": "Processed"}), headers={'Content-Type': 'application/json'})
+        return request.make_response(
+            json.dumps({
+                "ackReference": ack_reference,
+                "status": "processed"
+            }),
+            headers={'Content-Type': 'application/json'}
+        )
