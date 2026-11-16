@@ -19,13 +19,17 @@ class SeerbitController(http.Controller):
             notification to this endpoint and in turn leads to wrong validation,
             as such, received notifications needs to be re-verified.
         '''
+        ack_reference = http.request.httprequest.headers.get('X-Expected-Ack-Reference', '')
         data = json.loads(http.request.httprequest.data)
         # Ignore unknown ill-formed data
         try:
             notification = data.get('notificationItems')[0]["notificationRequestItem"]
             # ignore none transaction notification
             if notification["eventType"] != "transaction":
-                return
+                return {
+                    "ackReference": ack_reference,
+                    "status": "processed"
+                }
             payment_method = http.request.env['pos.payment.method'].sudo().search(
                 [('seerbit_public_key', '=', notification["data"]["publicKey"])], limit=1)
 
@@ -46,5 +50,10 @@ class SeerbitController(http.Controller):
             _logger.error(
                 "Error processing reconciliation notification: %s", str(e))
             return {'status': 'error', 'message': f'Processing error: {str(e)}'}
+
+        return {
+            "ackReference": ack_reference,
+            "status": "processed"
+        }
 
 
