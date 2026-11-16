@@ -9,3 +9,4 @@ from . import test_account_move_payment
 from . import test_dashboard_hooks
 from . import test_webhook
 from . import test_recent_changes
+from . import test_pos_va_features

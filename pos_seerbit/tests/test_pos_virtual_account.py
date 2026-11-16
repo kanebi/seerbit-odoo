@@ -288,8 +288,8 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertEqual(pm.seerbit_va_bank_name, 'Wema Bank')
             self.assertEqual(res.get('type'), 'ir.actions.client')
             next_action = res.get('params', {}).get('next', {})
-            self.assertEqual(next_action.get('type'), 'ir.actions.act_window')
-            self.assertEqual(next_action.get('res_id'), pm.id)
+            self.assertEqual(next_action.get('type'), 'ir.actions.client')
+            self.assertEqual(next_action.get('tag'), 'reload')
 
     def test_action_generate_va_on_pos_static_virtual_account(self):
         va = self.env['seerbit.virtual.account'].create({
