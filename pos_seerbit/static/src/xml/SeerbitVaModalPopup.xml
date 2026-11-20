@@ -147,17 +147,17 @@
                                         </div>
 
                                         <!-- Inside Amount Card: Change Amount Action -->
-                                        <div t-if="isDynamic" class="pt-3 border-top mt-auto" style="border-color: rgba(22, 101, 52, 0.25) !important;">
-                                            <button t-if="hasGeneratedDynamicVa and !state.isExpired" 
+                                        <div class="pt-3 border-top mt-auto" style="border-color: rgba(22, 101, 52, 0.25) !important;">
+                                            <button t-if="isDynamic and state.isExpired" 
+                                                    class="btn btn-danger fw-bold w-100 py-2 fs-6 rounded-3 shadow-sm d-flex align-items-center justify-content-center"
+                                                    t-on-click="generateDynamicVa">
+                                                <i class="fa fa-refresh me-2"/> Generate New Account
+                                            </button>
+                                            <button t-else="" 
                                                     class="btn btn-outline-success fw-bold w-100 py-2 fs-6 rounded-3 shadow-sm d-flex align-items-center justify-content-center"
                                                     style="background: #ffffff; border-color: #16A34A; color: #15803D;"
                                                     t-on-click="onChangeAmount">
                                                 <i class="fa fa-undo me-2"/> Change Amount
-                                            </button>
-                                            <button t-elif="state.isExpired" 
-                                                    class="btn btn-danger fw-bold w-100 py-2 fs-6 rounded-3 shadow-sm d-flex align-items-center justify-content-center"
-                                                    t-on-click="generateDynamicVa">
-                                                <i class="fa fa-refresh me-2"/> Generate New Account
                                             </button>
                                         </div>
                                     </div>
@@ -240,7 +240,7 @@
                                         <div class="fs-2 fw-bolder font-monospace my-1 text-truncate" style="color: #15803D;">
                                             <t t-esc="expectedAmountFormatted"/>
                                         </div>
-                                        <button t-if="isDynamic and hasGeneratedDynamicVa and !state.isExpired" 
+                                        <button t-if="!isDynamic or (isDynamic and !state.isExpired)" 
                                                 class="btn btn-sm btn-outline-success fw-bold w-100 mt-2 shadow-sm"
                                                 style="background: #ffffff; border-color: #16A34A; color: #15803D;"
                                                 t-on-click="onChangeAmount">
