@@ -102,7 +102,7 @@
                 <filter name="pos_static" string="POS Static Accounts" domain="[('va_type', '=', 'pos_static')]"/>
                 <separator/>
                 <filter name="pos_dynamic" string="POS Dynamic Accounts" domain="[('va_type', '=', 'pos_dynamic')]"/>
-                <group>
+                <group expand="0" string="Group By">
                     <filter string="VA Purpose Type" name="group_by_va_type" domain="[]" context="{'group_by': 'va_type'}"/>
                     <filter string="Bank Name" name="group_by_bank" domain="[]" context="{'group_by': 'bank_name'}"/>
                     <filter string="Company" name="group_by_company" domain="[]" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
