@@ -161,3 +161,12 @@ class TestSeerbitVirtualAccount(SeerbitCommon):
             tx_dyn = self.env['seerbit.va.transaction'].search([('reference', '=', 'REF_PAY_DYN_002')])
             self.assertTrue(tx_dyn)
             self.assertEqual(tx_dyn.amount, 500.0)
+
+    def test_action_virtual_account_default_filter_non_dynamic(self):
+        action = self.env.ref('pos_seerbit.action_seerbit_virtual_account')
+        self.assertTrue(action)
+        import ast
+        context = action.context or '{}'
+        if isinstance(context, str):
+            context = ast.literal_eval(context)
+        self.assertEqual(context.get('search_default_non_dynamic'), 1)
