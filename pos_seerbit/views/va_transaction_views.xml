@@ -115,7 +115,7 @@
                 <filter name="transferred_in" string="Transferred In" domain="[('is_transferred_in', '=', True)]"/>
                 <separator/>
                 <filter name="today" string="Today" domain="[('payment_date', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Virtual Account" name="group_by_va" domain="[]" context="{'group_by': 'va_id'}"/>
                     <filter string="Matching Status" name="group_by_matching" domain="[]" context="{'group_by': 'matching_status'}"/>
                     <filter string="Payment Date" name="group_by_date" domain="[]" context="{'group_by': 'payment_date:day'}"/>
