@@ -2,6 +2,7 @@
 import datetime
 import json
 import logging
+import psycopg2
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
@@ -144,7 +145,17 @@ class SeerbitVaTransaction(models.Model):
             'matching_status': 'unmatched',
             'raw_payload': json.dumps(raw_payload) if isinstance(raw_payload, dict) else str(raw_payload or ''),
         }
-        transaction = self.create(vals)
+        try:
+            with self.env.cr.savepoint():
+                transaction = self.create(vals)
+        except (psycopg2.IntegrityError, Exception) as e:
+            _logger.info("register_inbound_transaction savepoint fallback for ref %s: %s", reference, e)
+            existing = self.search([('reference', '=', reference)], limit=1)
+            if existing:
+                if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
+                    existing.write({'payer_name': payer_name})
+                return existing
+            raise
 
         if va.va_type in ('pos_static', 'pos_dynamic'):
             # Check if an existing pos.payment or pos.order already references this transaction

@@ -114,6 +114,8 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     async syncLiveFromSeerbit() {
         if (!this.vaId) return;
         this.state.syncing = true;
+        // 1. Immediately fetch from local Odoo DB first (sub-50ms)
+        await this.fetchPayments();
         try {
             await this.orm.call(
                 "seerbit.virtual.account",
@@ -123,7 +125,10 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {
-            this.notification.add(_t("Could not refresh: ") + (err.message || err), { type: "warning" });
+            console.warn("Live SeerBit refresh warning:", err);
+            await this.fetchPayments();
+            const errMsg = err?.data?.message || err?.message || String(err);
+            this.notification.add(_t("Could not refresh live from Seerbit: ") + errMsg, { type: "warning" });
         } finally {
             this.state.syncing = false;
         }

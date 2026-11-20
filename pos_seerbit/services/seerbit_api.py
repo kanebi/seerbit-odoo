@@ -165,10 +165,10 @@ class SeerbitAPI:
             _logger.error(f"Seerbit Delete VA Error: {e}")
             return False
 
-    def get_virtual_account_payments(self, account_number):
+    def get_virtual_account_payments(self, account_number, timeout=5):
         url = f'https://seerbitapi.com/api/v2/virtual-accounts/{self.public_key}/{account_number}'
         try:
-            response = self._do_request('GET', url)
+            response = self._do_request('GET', url, timeout=timeout)
             _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()

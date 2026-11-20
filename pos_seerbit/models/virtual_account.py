@@ -125,10 +125,12 @@ class SeerbitVirtualAccount(models.Model):
 
     def _fetch_and_process_payments(self, api_client):
         self.ensure_one()
+        if not self.account_number:
+            return
         if self.va_type in ('pos_static', 'pos_dynamic'):
             # POS Flow: Spool into seerbit.va.transaction
             try:
-                payload = api_client.get_virtual_account_payments(self.account_number)
+                payload = api_client.get_virtual_account_payments(self.account_number, timeout=5)
                 Transaction = self.env['seerbit.va.transaction']
                 for p in payload:
                     if p.get('gatewayCode') != '00':
@@ -196,14 +198,17 @@ class SeerbitVirtualAccount(models.Model):
     def action_refresh_balance(self):
         self.ensure_one()
         if not self.account_number:
-            raise UserError(_("Virtual Account not fully configured."))
+            _logger.info("action_refresh_balance called on VA %s without account_number", self.id)
+            return False
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=self.company_id)
 
         try:
             self._fetch_and_process_payments(api_client)
+            return True
         except Exception as e:
+            _logger.warning("Error refreshing balance for VA %s: %s", self.id, e)
             raise UserError(_("Error refreshing balance: %s" % str(e)))
 
     def action_generate_va(self):

@@ -59,3 +59,23 @@ class TestSeerbitConcurrency(TransactionCase):
         self.assertFalse(res.get('success'))
         self.assertIn("not found", res.get('error', '').lower())
 
+    def test_register_inbound_transaction_concurrency_savepoint(self):
+        # First registration
+        tx1 = self.env['seerbit.va.transaction'].register_inbound_transaction(
+            va=self.va,
+            reference='CONC_REF_123',
+            amount=1000.0,
+            payer_name='Bank Customer',
+        )
+        self.assertTrue(tx1)
+
+        # Second registration with updated payer name handles duplicate reference safely
+        tx2 = self.env['seerbit.va.transaction'].register_inbound_transaction(
+            va=self.va,
+            reference='CONC_REF_123',
+            amount=1000.0,
+            payer_name='Jane Doe',
+        )
+        self.assertEqual(tx1.id, tx2.id)
+        self.assertEqual(tx2.payer_name, 'Jane Doe')
+
