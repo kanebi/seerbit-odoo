@@ -64,10 +64,11 @@ class PosOrder(models.Model):
         if not payment_methods:
             return False
 
-        # 2. Query active POS sessions
+        # 2. Query active POS sessions configured with this payment method
         open_sessions = self.env['pos.session'].search([
             ('company_id', '=', company.id),
             ('state', '=', 'opened'),
+            ('config_id.payment_method_ids', 'in', payment_methods.ids),
         ])
         if not open_sessions:
             return False

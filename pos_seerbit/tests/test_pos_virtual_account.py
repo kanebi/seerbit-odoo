@@ -490,3 +490,125 @@ class TestPosVirtualAccount(SeerbitCommon):
         order.action_pos_order_paid()
         self.assertEqual(order.state, 'paid')
 
+    def test_inter_till_transfer_workflow(self):
+        """
+        Verify transferring an unmatched transaction from Till 1 to Till 2:
+        - Source transaction becomes 'transferred' and remains linked.
+        - Destination transaction is created for Till 2's VA as 'unmatched'.
+        - Spooling/re-registration does not overwrite 'transferred'.
+        - Atomic matching on the transferred source transaction is forbidden.
+        """
+        va1 = self.env['seerbit.virtual.account'].create({
+            'name': 'VA Store Till 1',
+            'company_id': self.company_a.id,
+            'partner_id': self.company_a.partner_id.id,
+            'account_number': '1112220001',
+            'bank_name': 'Test Bank 1',
+            'va_type': 'pos_static',
+        })
+        va2 = self.env['seerbit.virtual.account'].create({
+            'name': 'VA Store Till 2',
+            'company_id': self.company_a.id,
+            'partner_id': self.company_a.partner_id.id,
+            'account_number': '1112220002',
+            'bank_name': 'Test Bank 2',
+            'va_type': 'pos_static',
+        })
+
+        pm1 = self.env['pos.payment.method'].create({
+            'name': 'Transfer Till 1',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+            'seerbit_va_id': va1.id,
+        })
+        pm2 = self.env['pos.payment.method'].create({
+            'name': 'Transfer Till 2',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+            'seerbit_va_id': va2.id,
+        })
+
+        till1 = self.env['pos.config'].create({
+            'name': 'POS Till 1',
+            'company_id': self.company_a.id,
+            'payment_method_ids': [(6, 0, [pm1.id])],
+        })
+        till2 = self.env['pos.config'].create({
+            'name': 'POS Till 2',
+            'company_id': self.company_a.id,
+            'payment_method_ids': [(6, 0, [pm2.id])],
+        })
+
+        # Test get_available_tills_for_transfer
+        available = self.env['seerbit.va.transaction'].get_available_tills_for_transfer(current_config_id=till1.id)
+        till2_data = [t for t in available if t['id'] == till2.id]
+        self.assertTrue(till2_data)
+        self.assertEqual(till2_data[0]['payment_methods'][0]['account_number'], '1112220002')
+
+        # Create source transaction on VA 1
+        tx1 = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_ORIGINAL',
+            'va_id': va1.id,
+            'reference': 'REF_TRF_TEST_101',
+            'amount': 7500.0,
+            'payer_name': 'Accidental Sender',
+            'status': 'successful',
+            'matching_status': 'unmatched',
+        })
+
+        # Execute transfer to Till 2
+        res = self.env['seerbit.va.transaction'].transfer_payment_to_till(
+            transaction_id=tx1.id,
+            target_config_id=till2.id,
+            target_pm_id=pm2.id
+        )
+        self.assertTrue(res.get('success'))
+        self.assertEqual(res.get('dest_till_name'), till2.name)
+
+        # 1. Source transaction checks
+        tx1.invalidate_recordset()
+        self.assertEqual(tx1.matching_status, 'transferred')
+        self.assertEqual(tx1.transferred_to_config_id.id, till2.id)
+        self.assertEqual(tx1.transferred_to_va_id.id, va2.id)
+        self.assertTrue(tx1.transferred_to_tx_id)
+
+        # 2. Destination transaction checks
+        dest_tx = tx1.transferred_to_tx_id
+        self.assertEqual(dest_tx.va_id.id, va2.id)
+        self.assertEqual(dest_tx.amount, 7500.0)
+        self.assertEqual(dest_tx.payer_name, 'Accidental Sender')
+        self.assertEqual(dest_tx.matching_status, 'unmatched')
+        self.assertTrue(dest_tx.is_transferred_in)
+        self.assertEqual(dest_tx.transferred_from_tx_id.id, tx1.id)
+
+        # 3. get_unmatched_payments_for_pos on Till 1 returns it as 'transferred'
+        payments_till1 = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va1.id)
+        p1 = [p for p in payments_till1 if p['id'] == tx1.id][0]
+        self.assertEqual(p1['matching_status'], 'transferred')
+        self.assertEqual(p1['transferred_to_config_name'], till2.name)
+
+        # 4. get_unmatched_payments_for_pos on Till 2 returns it as active unmatched
+        payments_till2 = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va2.id)
+        p2 = [p for p in payments_till2 if p['id'] == dest_tx.id][0]
+        self.assertEqual(p2['matching_status'], 'unmatched')
+        self.assertTrue(p2['is_transferred_in'])
+
+        # 5. Idempotent re-spooling does not overwrite 'transferred'
+        re_spooled = self.env['seerbit.va.transaction'].register_inbound_transaction(
+            va=va1,
+            reference=tx1.reference,
+            amount=7500.0,
+            payer_name='Accidental Sender'
+        )
+        self.assertEqual(re_spooled.matching_status, 'transferred')
+
+        # 6. Attempting to match the transferred source payment is rejected
+        match_res = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            transaction_id=tx1.id,
+            pos_order_uuid='DUMMY_ORDER_123'
+        )
+        self.assertFalse(match_res.get('success'))
+
+

@@ -74,8 +74,36 @@ class SeerbitVaTransaction(models.Model):
         ('unmatched', 'Unmatched'),
         ('auto_matched', 'Auto-Matched'),
         ('manual_matched', 'Manually Matched'),
+        ('transferred', 'Transferred to Another Till'),
         ('cancelled', 'Cancelled')
     ], default='unmatched', required=True, index=True)
+
+    transferred_to_config_id = fields.Many2one(
+        'pos.config',
+        string="Transferred To Till",
+        readonly=True,
+        index=True
+    )
+    transferred_to_va_id = fields.Many2one(
+        'seerbit.virtual.account',
+        string="Transferred To VA",
+        readonly=True
+    )
+    transferred_to_tx_id = fields.Many2one(
+        'seerbit.va.transaction',
+        string="Destination Transaction",
+        readonly=True
+    )
+    transferred_from_tx_id = fields.Many2one(
+        'seerbit.va.transaction',
+        string="Source Transaction",
+        readonly=True
+    )
+    is_transferred_in = fields.Boolean(
+        string="Is Transferred In",
+        default=False,
+        readonly=True
+    )
 
     pos_order_id = fields.Many2one(
         'pos.order',
@@ -250,7 +278,7 @@ class SeerbitVaTransaction(models.Model):
         domain = [
             ('va_id', '=', va.id),
             ('status', '=', 'successful'),
-            ('matching_status', '=', 'unmatched'),
+            ('matching_status', 'in', ['unmatched', 'transferred']),
         ]
 
         if va.va_type == 'pos_dynamic' and order_created_at_str:
@@ -274,14 +302,141 @@ class SeerbitVaTransaction(models.Model):
 
         records = self.search_read(
             domain=domain,
-            fields=['id', 'reference', 'payer_name', 'amount', 'payment_date', 'status'],
+            fields=['id', 'reference', 'payer_name', 'amount', 'payment_date', 'status', 'matching_status', 'transferred_to_config_id', 'is_transferred_in'],
             limit=limit,
             order='payment_date desc'
         )
         for rec in records:
             if isinstance(rec.get('payment_date'), (datetime.datetime, datetime.date)):
                 rec['payment_date'] = fields.Datetime.to_string(rec['payment_date'])
+            if rec.get('transferred_to_config_id'):
+                rec['transferred_to_config_name'] = rec['transferred_to_config_id'][1]
+            else:
+                rec['transferred_to_config_name'] = False
         return records
+
+    @api.model
+    def get_available_tills_for_transfer(self, current_config_id=None):
+        """
+        Returns all other tills (pos.config) in the company that have
+        a SeerBit transfer payment method, including their open session status.
+        """
+        current_config = self.env['pos.config'].sudo().browse(current_config_id) if current_config_id else None
+        company_id = current_config.company_id.id if current_config else self.env.company.id
+
+        configs = self.env['pos.config'].sudo().search([
+            ('company_id', '=', company_id),
+            ('id', '!=', current_config_id or 0),
+        ])
+
+        result = []
+        for cfg in configs:
+            transfer_methods = cfg.payment_method_ids.filtered(
+                lambda m: m.payment_method_type == 'transfer' and m.seerbit_va_id
+            )
+            if not transfer_methods:
+                continue
+
+            open_session = cfg.current_session_id if cfg.current_session_id and cfg.current_session_id.state == 'opened' else None
+
+            result.append({
+                'id': cfg.id,
+                'name': cfg.name,
+                'is_open': bool(open_session),
+                'session_id': open_session.id if open_session else False,
+                'session_name': open_session.name if open_session else False,
+                'payment_methods': [{
+                    'id': pm.id,
+                    'name': pm.name,
+                    'account_number': pm.seerbit_va_account_number,
+                    'bank_name': pm.seerbit_va_bank_name,
+                    'va_id': pm.seerbit_va_id.id,
+                } for pm in transfer_methods]
+            })
+        return result
+
+    @api.model
+    def transfer_payment_to_till(self, transaction_id, target_config_id, target_pm_id=None):
+        """
+        Transfers an unmatched VA transaction to another till.
+        Marks source transaction as 'transferred', creates destination transaction on target VA,
+        and broadcasts real-time bus notification to target open session.
+        """
+        source_tx = self.sudo().browse(transaction_id)
+        if not source_tx.exists() or source_tx.matching_status != 'unmatched':
+            return {
+                'success': False,
+                'error': _("This payment is no longer available for transfer (already matched or transferred).")
+            }
+
+        target_config = self.env['pos.config'].sudo().browse(target_config_id)
+        if not target_config.exists():
+            return {'success': False, 'error': _("Target till not found.")}
+
+        if target_pm_id:
+            target_pm = self.env['pos.payment.method'].sudo().browse(target_pm_id)
+        else:
+            target_pm = target_config.payment_method_ids.filtered(
+                lambda m: m.payment_method_type == 'transfer' and m.seerbit_va_id
+            )[:1]
+
+        if not target_pm or not target_pm.seerbit_va_id:
+            return {'success': False, 'error': _("Target till has no SeerBit transfer payment method configured.")}
+
+        target_va = target_pm.seerbit_va_id
+
+        # Unique reference for transferred destination transaction
+        dest_ref = f"{source_tx.reference}_TRF_{target_config.id}"
+        dest_tx = self.sudo().search([('reference', '=', dest_ref)], limit=1)
+        if not dest_tx:
+            dest_tx = self.sudo().create({
+                'name': self.env['ir.sequence'].next_by_code('seerbit.va.transaction') or dest_ref,
+                'va_id': target_va.id,
+                'reference': dest_ref,
+                'amount': source_tx.amount,
+                'payer_name': source_tx.payer_name,
+                'payment_date': source_tx.payment_date or fields.Datetime.now(),
+                'status': 'successful',
+                'matching_status': 'unmatched',
+                'is_transferred_in': True,
+                'transferred_from_tx_id': source_tx.id,
+                'raw_payload': source_tx.raw_payload,
+            })
+
+        # Update source transaction
+        source_tx.sudo().write({
+            'matching_status': 'transferred',
+            'transferred_to_config_id': target_config.id,
+            'transferred_to_va_id': target_va.id,
+            'transferred_to_tx_id': dest_tx.id,
+        })
+
+        # Realtime Bus Dispatch to target open session(s)
+        open_sessions = self.env['pos.session'].sudo().search([
+            ('config_id', '=', target_config.id),
+            ('state', '=', 'opened'),
+        ])
+        for sess in open_sessions:
+            sess._broadcast_seerbit_va_event(
+                event_type='seerbit_va_payment_received',
+                data={
+                    'transaction_id': dest_tx.id,
+                    'reference': dest_tx.reference,
+                    'amount': dest_tx.amount,
+                    'payer_name': dest_tx.payer_name,
+                    'account_number': target_va.account_number,
+                    'is_transferred': True,
+                    'from_till': source_tx.company_id.name or "Another Till",
+                    'payment_date': fields.Datetime.to_string(dest_tx.payment_date),
+                }
+            )
+
+        return {
+            'success': True,
+            'dest_tx_id': dest_tx.id,
+            'dest_till_name': target_config.name,
+            'dest_ref': dest_ref,
+        }
 
     @api.model
     def match_payment_to_pos_order_atomic(self, transaction_id, pos_order_uuid, cashier_user_id=None):

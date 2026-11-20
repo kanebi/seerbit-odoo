@@ -96,10 +96,19 @@ export const posSeerbitBusService = {
                     }
                 }
             } else if (type === "seerbit_va_payment_received") {
-                notification.add(
-                    _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference),
-                    { type: "info" }
-                );
+                const msg = data.is_transferred ?
+                    _t("Bank transfer of %s received (Transferred from %s, Ref: %s)", data.amount, data.from_till || "another till", data.reference) :
+                    _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference);
+                notification.add(msg, { type: "info" });
+
+                // Transferred payments are matched manually by cashier in the payments dialog
+                if (data.is_transferred) {
+                    const activeModal = pos._active_seerbit_modal;
+                    if (activeModal && typeof activeModal.fetchPayments === "function") {
+                        activeModal.fetchPayments();
+                    }
+                    return;
+                }
 
                 if (currentOrder) {
                     const paymentLines = currentOrder.get_paymentlines ? currentOrder.get_paymentlines() : (currentOrder.payment_ids || []);

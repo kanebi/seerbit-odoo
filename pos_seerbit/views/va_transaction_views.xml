@@ -12,8 +12,10 @@
                 <field name="payer_name"/>
                 <field name="amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
                 <field name="status" widget="badge" decoration-success="status == 'successful'" decoration-danger="status == 'failed'" decoration-warning="status == 'pending'"/>
-                <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'" decoration-muted="matching_status == 'cancelled'"/>
+                <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'" decoration-warning="matching_status == 'transferred'" decoration-muted="matching_status == 'cancelled'"/>
                 <field name="pos_order_ref"/>
+                <field name="transferred_to_config_id" optional="hide"/>
+                <field name="is_transferred_in" optional="hide"/>
                 <field name="company_id" groups="base.group_multi_company"/>
                 <field name="currency_id" column_invisible="True"/>
             </list>
@@ -64,7 +66,7 @@
                     </group>
                     <group string="POS Settlement &amp; Matching">
                         <group>
-                            <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'"/>
+                            <field name="matching_status" widget="badge" decoration-success="matching_status in ('auto_matched', 'manual_matched')" decoration-info="matching_status == 'unmatched'" decoration-warning="matching_status == 'transferred'"/>
                             <field name="pos_order_id"/>
                             <field name="pos_order_ref"/>
                         </group>
@@ -73,6 +75,17 @@
                             <field name="pos_payment_id"/>
                             <field name="matched_by_user_id"/>
                             <field name="matched_at"/>
+                        </group>
+                    </group>
+                    <group string="Inter-Till Transfer Details" invisible="not transferred_to_config_id and not is_transferred_in">
+                        <group>
+                            <field name="is_transferred_in"/>
+                            <field name="transferred_from_tx_id" invisible="not transferred_from_tx_id"/>
+                        </group>
+                        <group>
+                            <field name="transferred_to_config_id" invisible="not transferred_to_config_id"/>
+                            <field name="transferred_to_va_id" invisible="not transferred_to_va_id"/>
+                            <field name="transferred_to_tx_id" invisible="not transferred_to_tx_id"/>
                         </group>
                     </group>
                     <notebook>
@@ -98,9 +111,11 @@
                 <filter name="unmatched" string="Unmatched" domain="[('matching_status', '=', 'unmatched')]"/>
                 <filter name="auto_matched" string="Auto-Matched" domain="[('matching_status', '=', 'auto_matched')]"/>
                 <filter name="manual_matched" string="Manually Matched" domain="[('matching_status', '=', 'manual_matched')]"/>
+                <filter name="transferred" string="Transferred to Till" domain="[('matching_status', '=', 'transferred')]"/>
+                <filter name="transferred_in" string="Transferred In" domain="[('is_transferred_in', '=', True)]"/>
                 <separator/>
                 <filter name="today" string="Today" domain="[('payment_date', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
-                <group>
+                <group expand="0" string="Group By">
                     <filter string="Virtual Account" name="group_by_va" domain="[]" context="{'group_by': 'va_id'}"/>
                     <filter string="Matching Status" name="group_by_matching" domain="[]" context="{'group_by': 'matching_status'}"/>
                     <filter string="Payment Date" name="group_by_date" domain="[]" context="{'group_by': 'payment_date:day'}"/>

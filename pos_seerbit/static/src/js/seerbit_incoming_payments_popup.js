@@ -30,6 +30,13 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             syncing: false,
             searchQuery: "",
             selectedPayment: null,
+            showTransferModal: false,
+            transferPaymentTarget: null,
+            availableTills: [],
+            loadingTills: false,
+            selectedTargetTillId: null,
+            selectedTargetPmId: null,
+            transferringPayment: false,
         });
 
         this.unsubscribeBus = null;
@@ -193,6 +200,82 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             console.debug("Quiet payments fetch warning:", err);
         } finally {
             this._isSpoolingQuietly = false;
+        }
+    }
+
+    async openTransferToTill(payment) {
+        this.state.transferPaymentTarget = payment;
+        this.state.showTransferModal = true;
+        this.state.loadingTills = true;
+        this.state.selectedTargetTillId = null;
+        this.state.selectedTargetPmId = null;
+        try {
+            const currentConfigId = this.env?.services?.pos?.config?.id;
+            const tills = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_available_tills_for_transfer",
+                [],
+                { current_config_id: currentConfigId }
+            );
+            this.state.availableTills = tills || [];
+            if (this.state.availableTills.length === 1) {
+                this.selectTargetTill(this.state.availableTills[0]);
+            }
+        } catch (err) {
+            console.error("Failed to load available tills:", err);
+            this.notification.add(_t("Failed to load available tills: ") + (err.message || err), { type: "danger" });
+        } finally {
+            this.state.loadingTills = false;
+        }
+    }
+
+    selectTargetTill(till) {
+        this.state.selectedTargetTillId = till.id;
+        if (till.payment_methods?.length === 1) {
+            this.state.selectedTargetPmId = till.payment_methods[0].id;
+        } else {
+            this.state.selectedTargetPmId = till.payment_methods?.[0]?.id || null;
+        }
+    }
+
+    closeTransferModal() {
+        this.state.showTransferModal = false;
+        this.state.transferPaymentTarget = null;
+        this.state.selectedTargetTillId = null;
+        this.state.selectedTargetPmId = null;
+    }
+
+    async confirmTransferToTill() {
+        const payment = this.state.transferPaymentTarget;
+        const targetConfigId = this.state.selectedTargetTillId;
+        const targetPmId = this.state.selectedTargetPmId;
+        if (!payment || !targetConfigId) {
+            this.notification.add(_t("Please select a destination till."), { type: "warning" });
+            return;
+        }
+
+        this.state.transferringPayment = true;
+        try {
+            const res = await this.orm.call(
+                "seerbit.va.transaction",
+                "transfer_payment_to_till",
+                [payment.id, targetConfigId, targetPmId]
+            );
+            if (res.success) {
+                this.notification.add(
+                    _t("Payment of %s successfully transferred to %s!", this.formatAmount(payment.amount), res.dest_till_name),
+                    { type: "success" }
+                );
+                this.closeTransferModal();
+                await this.fetchPayments();
+            } else {
+                this.notification.add(res.error || _t("Failed to transfer payment to till."), { type: "danger" });
+            }
+        } catch (err) {
+            console.error("Transfer error:", err);
+            this.notification.add(_t("Error transferring payment: ") + (err.message || err), { type: "danger" });
+        } finally {
+            this.state.transferringPayment = false;
         }
     }
 
