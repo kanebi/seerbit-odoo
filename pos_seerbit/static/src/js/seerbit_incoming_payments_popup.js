@@ -33,9 +33,12 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         });
 
         this.unsubscribeBus = null;
+        this.quietSpoolerInterval = null;
+        this._isSpoolingQuietly = false;
 
         onMounted(() => {
             this.fetchPayments();
+            this._startQuietSpooler();
             if (this.busService) {
                 this.unsubscribeBus = this.busService.subscribe("seerbit_va_notification", (payload) => {
                     const { type, data } = payload || {};
@@ -50,6 +53,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         });
 
         onWillUnmount(() => {
+            this._stopQuietSpooler();
             if (typeof this.unsubscribeBus === "function") {
                 this.unsubscribeBus();
             }
@@ -131,6 +135,51 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             this.notification.add(_t("Could not refresh live from Seerbit: ") + errMsg, { type: "warning" });
         } finally {
             this.state.syncing = false;
+        }
+    }
+
+    _startQuietSpooler() {
+        this._stopQuietSpooler();
+        if (!this.vaId) return;
+
+        this._spoolQuietly();
+        this.quietSpoolerInterval = setInterval(() => {
+            this._spoolQuietly();
+        }, 5000);
+    }
+
+    _stopQuietSpooler() {
+        if (this.quietSpoolerInterval) {
+            clearInterval(this.quietSpoolerInterval);
+            this.quietSpoolerInterval = null;
+        }
+    }
+
+    async _spoolQuietly() {
+        if (!this.vaId || this._isSpoolingQuietly) return;
+        this._isSpoolingQuietly = true;
+        try {
+            await this.orm.call(
+                "seerbit.virtual.account",
+                "action_refresh_balance",
+                [[this.vaId]]
+            );
+        } catch (err) {
+            console.debug("Quiet Seerbit background spool warning:", err);
+        }
+
+        try {
+            const orderCreatedAt = this.props.order?.date_order || this.props.order?.creation_date?.toISOString?.() || new Date().toISOString();
+            const data = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_unmatched_payments_for_pos",
+                [this.vaId, orderCreatedAt, 30]
+            );
+            this.state.payments = data || [];
+        } catch (err) {
+            console.debug("Quiet payments fetch warning:", err);
+        } finally {
+            this._isSpoolingQuietly = false;
         }
     }
 

@@ -84,14 +84,17 @@ class SeerbitAPI:
         try:
             response = requests.request(method, url, **kwargs)
             if response.status_code == 401:
-                _logger.info("Seerbit request returned 401. Attempting to refresh token...")
+                _logger.info("Seerbit request returned 401. Refreshing token...")
                 self._get_encrypted_key(force_refresh=True)
                 if 'PublicKey' in kwargs['headers']:
                     kwargs['headers']['Authorization'] = f'Bearer {self._get_encrypted_key()}'
                 else:
                     kwargs['headers'] = self._get_headers()
                 response = requests.request(method, url, **kwargs)
-                
+
+            clean_url = url.split('?')[0]
+            _logger.info("Seerbit API [%s %s] -> Status %s", method, clean_url, response.status_code)
+            _logger.debug("Seerbit API [%s %s] body: %s", method, url, response.text)
             return response
         except Exception as e:
             _logger.error("Seerbit request failed [%s %s]: %s", method, url, str(e))
@@ -136,7 +139,6 @@ class SeerbitAPI:
         
         try:
             response = self._do_request('POST', url, json=payload)
-            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -158,7 +160,6 @@ class SeerbitAPI:
         url = f'https://seerbitapi.com/api/v2/virtual-accounts/{reference}'
         try:
             response = self._do_request('DELETE', url)
-            _logger.info("Seerbit HTTPS Response [DELETE %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -169,7 +170,6 @@ class SeerbitAPI:
         url = f'https://seerbitapi.com/api/v2/virtual-accounts/{self.public_key}/{account_number}'
         try:
             response = self._do_request('GET', url, timeout=timeout)
-            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -197,7 +197,6 @@ class SeerbitAPI:
         }
         try:
             response = self._do_request('POST', url, json=payload)
-            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -219,7 +218,6 @@ class SeerbitAPI:
         url = f'https://seerbitapi.com/api/v2/virtual-accounts/list/{self.public_key}'
         try:
             response = self._do_request('GET', url)
-            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -244,7 +242,6 @@ class SeerbitAPI:
         
         try:
             response = self._do_request('POST', url, json=payload)
-            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('code') == '00':
@@ -260,7 +257,6 @@ class SeerbitAPI:
         url = f'https://merchant.seerbitapi.com/invoice/{self.public_key}/{invoice_no}'
         try:
             response = self._do_request('GET', url)
-            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('code') == '00':
@@ -281,7 +277,6 @@ class SeerbitAPI:
         
         try:
             response = self._do_request('GET', url)
-            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
             
             response.raise_for_status()
             res_data = response.json()
@@ -301,7 +296,6 @@ class SeerbitAPI:
         url = f'https://merchant.seerbitapi.com/invoice/{self.public_key}/{invoice_no}'
         try:
             response = self._do_request('DELETE', url)
-            _logger.info("Seerbit HTTPS Response [DELETE %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -336,7 +330,6 @@ class SeerbitAPI:
         
         try:
             response = self._do_request('POST', url, json=payload)
-            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('data') and 'paymentLinks' in res_data['data']:
@@ -376,7 +369,6 @@ class SeerbitAPI:
         
         try:
             response = self._do_request('PUT', url, json=payload)
-            _logger.info("Seerbit HTTPS Response [PUT %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' or str(res_data.get('code')) in ('00', '200'):
@@ -392,7 +384,6 @@ class SeerbitAPI:
         url = f'https://paymentlink.seerbitapi.com/paymentlink/v2/payLinks/api/deleteLink/{payment_link_id}'
         try:
             response = self._do_request('DELETE', url)
-            _logger.info("Seerbit HTTPS Response [DELETE %s]: Status %s - Body: %s", url, response.status_code, response.text)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'Deleted':

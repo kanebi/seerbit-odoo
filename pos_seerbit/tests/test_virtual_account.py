@@ -109,6 +109,47 @@ class TestSeerbitVirtualAccount(SeerbitCommon):
         self.assertIn(self.company_b.id, companies_seen)
         self.assertTrue(va_a.exists() and va_b.exists())
 
+    def test_cron_skips_matched_dynamic_va(self):
+        va_dynamic_unmatched = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '5551110001',
+            'reference': 'VA_DYN_UNMATCHED',
+            'va_type': 'pos_dynamic',
+        })
+        va_dynamic_matched = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '5551110002',
+            'reference': 'VA_DYN_MATCHED',
+            'va_type': 'pos_dynamic',
+        })
+        self.env['seerbit.va.transaction'].create({
+            'va_id': va_dynamic_matched.id,
+            'reference': 'TX_MATCHED_123',
+            'amount': 100.0,
+            'matching_status': 'auto_matched',
+            'pos_order_ref': 'POS/TEST/001',
+        })
+        accounts_spooled = []
+
+        class TrackingAPI:
+            def __init__(self, env, company=None):
+                self.company = company
+
+            def get_virtual_account_payments(self, account_number, timeout=5):
+                accounts_spooled.append(account_number)
+                return []
+
+        with patch(
+            'odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI',
+            TrackingAPI,
+        ):
+            self.env['seerbit.virtual.account']._cron_spool_seerbit_payments()
+
+        self.assertIn('5551110001', accounts_spooled)
+        self.assertNotIn('5551110002', accounts_spooled)
+
     def test_action_refresh_balance_without_account_number(self):
         va = self.env['seerbit.virtual.account'].create({
             'partner_id': self.partner_a.id,

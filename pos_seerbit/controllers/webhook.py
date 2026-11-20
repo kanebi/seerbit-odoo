@@ -29,7 +29,8 @@ class SeerbitWebhookController(http.Controller):
             _logger.warning("Seerbit Webhook received empty payload.")
             return request.make_response(json.dumps({"status": "error", "message": "Empty payload"}), headers={'Content-Type': 'application/json'})
 
-        _logger.info(f"Seerbit Webhook received: {json.dumps(payload)}")
+        _logger.info("Seerbit Webhook received")
+        _logger.debug("Seerbit Webhook payload: %s", payload)
         
         # Parse standard Seerbit structure
         notification_items = payload.get('notificationItems', [])

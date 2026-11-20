@@ -132,6 +132,16 @@ class SeerbitVaTransaction(models.Model):
         if existing:
             if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
                 existing.write({'payer_name': payer_name})
+            if existing.matching_status == 'unmatched' and va.va_type in ('pos_static', 'pos_dynamic'):
+                payment = self.env['pos.payment'].search([
+                    '|',
+                    ('transaction_id', '=', reference),
+                    ('seerbit_transaction_ref', '=', reference)
+                ], limit=1)
+                if payment and payment.pos_order_id:
+                    self._match_transaction_to_payment(existing, payment, payer_name, amount)
+                else:
+                    self.env['pos.order']._attempt_va_auto_match(existing)
             return existing
 
         vals = {
@@ -154,6 +164,16 @@ class SeerbitVaTransaction(models.Model):
             if existing:
                 if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
                     existing.write({'payer_name': payer_name})
+                if existing.matching_status == 'unmatched' and va.va_type in ('pos_static', 'pos_dynamic'):
+                    payment = self.env['pos.payment'].search([
+                        '|',
+                        ('transaction_id', '=', reference),
+                        ('seerbit_transaction_ref', '=', reference)
+                    ], limit=1)
+                    if payment and payment.pos_order_id:
+                        self._match_transaction_to_payment(existing, payment, payer_name, amount)
+                    else:
+                        self.env['pos.order']._attempt_va_auto_match(existing)
                 return existing
             raise
 
@@ -165,29 +185,47 @@ class SeerbitVaTransaction(models.Model):
                 ('seerbit_transaction_ref', '=', reference)
             ], limit=1)
             if payment and payment.pos_order_id:
-                order = payment.pos_order_id
-                transaction.write({
-                    'matching_status': 'auto_matched' if va.va_type == 'pos_dynamic' else 'manual_matched',
-                    'pos_order_id': order.id,
-                    'pos_order_ref': order.pos_reference or order.name,
-                    'pos_payment_id': payment.id,
-                    'pos_session_id': order.session_id.id,
-                    'matched_by_user_id': order.user_id.id or self.env.uid,
-                    'matched_at': fields.Datetime.now(),
-                })
-                payment.write({'seerbit_va_transaction_id': transaction.id})
-                if not order.seerbit_va_transaction_id:
-                    order.write({
-                        'seerbit_va_transaction_id': transaction.id,
-                        'seerbit_transaction_ref': reference,
-                        'seerbit_payer_name': payer_name or 'Bank Customer',
-                        'seerbit_amount_received': float(amount or 0.0),
-                    })
+                self._match_transaction_to_payment(transaction, payment, payer_name, amount)
             else:
                 # Attempt auto-match against open orders
                 self.env['pos.order']._attempt_va_auto_match(transaction)
 
         return transaction
+
+    @api.model
+    def _match_transaction_to_payment(self, transaction, payment, payer_name=None, amount=None):
+        order = payment.pos_order_id
+        now = fields.Datetime.now()
+        transaction.write({
+            'matching_status': 'auto_matched' if transaction.va_id.va_type == 'pos_dynamic' else 'manual_matched',
+            'pos_order_id': order.id,
+            'pos_order_ref': order.pos_reference or order.name,
+            'pos_payment_id': payment.id,
+            'pos_session_id': order.session_id.id,
+            'matched_by_user_id': order.user_id.id or self.env.uid,
+            'matched_at': now,
+        })
+        payment.write({'seerbit_va_transaction_id': transaction.id})
+        if not order.seerbit_va_transaction_id:
+            order.write({
+                'seerbit_va_transaction_id': transaction.id,
+                'seerbit_transaction_ref': transaction.reference,
+                'seerbit_payer_name': payer_name or transaction.payer_name or 'Bank Customer',
+                'seerbit_amount_received': float(amount or transaction.amount or 0.0),
+            })
+        if order.session_id:
+            order.session_id._broadcast_seerbit_va_event(
+                event_type='seerbit_va_payment_matched',
+                data={
+                    'transaction_id': transaction.id,
+                    'reference': transaction.reference,
+                    'amount': transaction.amount,
+                    'payer_name': transaction.payer_name,
+                    'order_id': order.id,
+                    'order_ref': order.pos_reference or order.name,
+                    'account_number': transaction.account_number,
+                }
+            )
 
     @api.model
     def get_unmatched_payments_for_pos(self, va_id, order_created_at_str=None, limit=20):

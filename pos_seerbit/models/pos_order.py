@@ -115,6 +115,7 @@ class PosOrder(models.Model):
                     'payer_name': transaction.payer_name,
                     'order_id': matched_order.id,
                     'order_ref': matched_order.pos_reference or matched_order.name,
+                    'account_number': transaction.account_number,
                 }
             )
             return True

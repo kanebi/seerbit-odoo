@@ -43,6 +43,8 @@ export class SeerbitVaModalPopup extends Component {
         this.successTimer = null;
         this.statusPoller = null;
         this._busHandler = null;
+        this.quietSpoolerInterval = null;
+        this._isSpoolingQuietly = false;
 
         onMounted(() => {
             if (this.paymentLine) {
@@ -107,6 +109,7 @@ export class SeerbitVaModalPopup extends Component {
 
         onWillUnmount(() => {
             this._stopCountdownTimer();
+            this._stopQuietSpooler();
             if (this.statusPoller) {
                 clearInterval(this.statusPoller);
                 this.statusPoller = null;
@@ -360,8 +363,69 @@ export class SeerbitVaModalPopup extends Component {
 
     async togglePaymentsList() {
         this.state.showPaymentsList = !this.state.showPaymentsList;
-        if (this.state.showPaymentsList && !this.state.payments.length) {
-            await this.fetchPayments();
+        if (this.state.showPaymentsList) {
+            if (!this.state.payments.length) {
+                await this.fetchPayments();
+            }
+            this._startQuietSpooler();
+        } else {
+            this._stopQuietSpooler();
+        }
+    }
+
+    _startQuietSpooler() {
+        this._stopQuietSpooler();
+        if (!this.vaId || this.state.isSuccess) return;
+
+        // Immediately run quiet refresh on open
+        this._spoolQuietly();
+
+        // Continuously run in background every 5 seconds without disrupting UI or showing loaders
+        this.quietSpoolerInterval = setInterval(() => {
+            if (this.state.showPaymentsList && !this.state.isSuccess) {
+                this._spoolQuietly();
+            } else {
+                this._stopQuietSpooler();
+            }
+        }, 5000);
+    }
+
+    _stopQuietSpooler() {
+        if (this.quietSpoolerInterval) {
+            clearInterval(this.quietSpoolerInterval);
+            this.quietSpoolerInterval = null;
+        }
+    }
+
+    async _spoolQuietly() {
+        if (!this.vaId || this.state.isSuccess || this._isSpoolingQuietly) return;
+        this._isSpoolingQuietly = true;
+        try {
+            await this.orm.call(
+                "seerbit.virtual.account",
+                "action_refresh_balance",
+                [[this.vaId]]
+            );
+        } catch (err) {
+            console.debug("Quiet Seerbit background spool warning:", err);
+        }
+
+        try {
+            const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
+            const orderCreatedAt = order?.date_order || order?.creation_date?.toISOString?.() || new Date().toISOString();
+            const data = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_unmatched_payments_for_pos",
+                [this.vaId, orderCreatedAt, 30]
+            );
+            if (!this.state.isSuccess && this.state.showPaymentsList) {
+                this.state.payments = data || [];
+                this.state.unmatchedCount = this.state.payments.length;
+            }
+        } catch (err) {
+            console.debug("Quiet payments fetch warning:", err);
+        } finally {
+            this._isSpoolingQuietly = false;
         }
     }
 
@@ -458,6 +522,7 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     showSuccessAndClose(data) {
+        this._stopQuietSpooler();
         if (this.state.isSuccess) return;
         this._stopCountdownTimer();
         if (this.statusPoller) {
@@ -563,6 +628,7 @@ export class SeerbitVaModalPopup extends Component {
 
     _closeModal() {
         this._stopCountdownTimer();
+        this._stopQuietSpooler();
         if (this.statusPoller) {
             clearInterval(this.statusPoller);
             this.statusPoller = null;

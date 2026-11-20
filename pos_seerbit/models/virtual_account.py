@@ -1,6 +1,7 @@
+import datetime
+import logging
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
-import logging
 
 from odoo.addons.pos_seerbit.bus_notify import send_seerbit_ui_notification
 
@@ -95,7 +96,29 @@ class SeerbitVirtualAccount(models.Model):
 
     @api.model
     def _cron_spool_seerbit_payments(self):
-        vas = self.search([('account_number', '!=', False)])
+        # Exclude dynamic VAs matched to an order
+        matched_dynamic_txs = self.env['seerbit.va.transaction'].search([
+            ('va_id.va_type', '=', 'pos_dynamic'),
+            '|', '|',
+            ('matching_status', 'in', ['auto_matched', 'manual_matched']),
+            ('pos_order_id', '!=', False),
+            ('pos_order_ref', '!=', False),
+        ])
+        excluded_dynamic_va_ids = set(matched_dynamic_txs.mapped('va_id').ids)
+
+        # Also exclude old dynamic VAs (> 2 hours) to avoid spooling expired temporary accounts
+        cutoff_dt = fields.Datetime.now() - datetime.timedelta(hours=2)
+        old_dynamic_vas = self.search([
+            ('va_type', '=', 'pos_dynamic'),
+            ('create_date', '<', cutoff_dt),
+        ])
+        excluded_dynamic_va_ids.update(old_dynamic_vas.ids)
+
+        domain = [('account_number', '!=', False)]
+        if excluded_dynamic_va_ids:
+            domain.append(('id', 'not in', list(excluded_dynamic_va_ids)))
+
+        vas = self.search(domain)
         if not vas:
             return
 
@@ -112,15 +135,9 @@ class SeerbitVirtualAccount(models.Model):
                 try:
                     va._fetch_and_process_payments(api_client)
                 except Exception as e:
-                    _logger.error(
-                        "Error spooling payments for VA %s (%s): %s",
+                    _logger.warning(
+                        "Seerbit spool warning for VA %s (%s): %s",
                         va.account_number, company.name, e,
-                    )
-                    send_seerbit_ui_notification(
-                        self.env,
-                        'Seerbit Sync Error',
-                        f'Failed to sync VA {va.name or va.account_number}: {str(e)}',
-                        record=va,
                     )
 
     def _fetch_and_process_payments(self, api_client):
