@@ -138,12 +138,27 @@
                                 
                                 <!-- LEFT CARD: Amount to Transfer (Cozy Green Emerald Theme) -->
                                 <div class="col-12 col-md-5 d-flex flex-column">
-                                    <div class="card h-100 p-4 seerbit-amount-card d-flex flex-column justify-content-center text-center">
+                                    <div class="card h-100 p-4 seerbit-amount-card d-flex flex-column justify-content-between text-center">
                                         <div class="my-auto">
                                             <div class="small fw-bolder text-uppercase" style="color: #166534; letter-spacing: 1.5px;">AMOUNT TO TRANSFER</div>
                                             <div class="display-3 fw-bolder font-monospace my-3 text-truncate" style="color: #15803D; letter-spacing: -1px;">
                                                 <t t-esc="expectedAmountFormatted"/>
                                             </div>
+                                        </div>
+
+                                        <!-- Inside Amount Card: Change Amount Action -->
+                                        <div t-if="isDynamic" class="pt-3 border-top mt-auto" style="border-color: rgba(22, 101, 52, 0.25) !important;">
+                                            <button t-if="hasGeneratedDynamicVa and !state.isExpired" 
+                                                    class="btn btn-outline-success fw-bold w-100 py-2 fs-6 rounded-3 shadow-sm d-flex align-items-center justify-content-center"
+                                                    style="background: #ffffff; border-color: #16A34A; color: #15803D;"
+                                                    t-on-click="onChangeAmount">
+                                                <i class="fa fa-undo me-2"/> Change Amount
+                                            </button>
+                                            <button t-elif="state.isExpired" 
+                                                    class="btn btn-danger fw-bold w-100 py-2 fs-6 rounded-3 shadow-sm d-flex align-items-center justify-content-center"
+                                                    t-on-click="generateDynamicVa">
+                                                <i class="fa fa-refresh me-2"/> Generate New Account
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -170,25 +185,46 @@
                                             </div>
                                         </div>
 
-                                        <!-- Bottom Row: Account Name -->
-                                        <div class="pt-3 border-top mt-3 text-start" style="border-color: #E2E8F0 !important;">
-                                            <div class="small fw-bolder text-uppercase" style="color: #64748B; letter-spacing: 0.5px;">ACCOUNT NAME</div>
-                                            <div class="fs-4 fw-bold mt-1 text-truncate" style="color: #1E293B;" t-att-title="accountName">
-                                                <t t-esc="accountName"/>
+                                        <!-- Bottom Section: Account Name, Live Pulse & Primary Actions Inside Card -->
+                                        <div class="pt-3 border-top mt-2" style="border-color: #E2E8F0 !important;">
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <div class="text-start">
+                                                    <div class="small fw-bolder text-uppercase" style="color: #64748B; letter-spacing: 0.5px;">ACCOUNT NAME</div>
+                                                    <div class="fs-4 fw-bold mt-1 text-truncate" style="color: #1E293B;" t-att-title="accountName">
+                                                        <t t-esc="accountName"/>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Radiant SeerBit Logo-Color Loading Beacon -->
+                                                <div t-if="!state.isExpired" class="seerbit-radiant-beacon py-1 px-3">
+                                                    <span class="seerbit-beep-dot"></span>
+                                                    <span class="seerbit-beep-dot"></span>
+                                                    <span class="seerbit-beep-dot"></span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Inside Card Action Buttons -->
+                                            <div class="d-flex gap-2 align-items-center">
+                                                <button t-if="hasGeneratedDynamicVa" 
+                                                        class="btn seerbit-btn-primary btn-lg flex-grow-1 fw-bolder py-2 px-3 fs-6 rounded-3 shadow d-flex align-items-center justify-content-center"
+                                                        t-on-click="togglePaymentsList">
+                                                    <i class="fa fa-list-alt me-2"/>
+                                                    <span>Check / Select Bank Payment</span>
+                                                    <span t-if="state.unmatchedCount > 0" class="badge bg-white text-danger ms-2 fw-bold">
+                                                        <t t-esc="state.unmatchedCount"/> new
+                                                    </span>
+                                                </button>
+
+                                                <button class="btn btn-outline-dark fw-bold py-2 px-4 fs-6 rounded-3 shadow-sm" 
+                                                        style="border-color: #94A3B8; color: #1E293B;"
+                                                        t-on-click="_closeModal">
+                                                    Close
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                            </div>
-
-                            <!-- Radiant SeerBit Logo-Color Loading Beacon (Zero redundant texts) -->
-                            <div t-if="!state.isExpired" class="d-flex align-items-center justify-content-center py-2 mt-3">
-                                <div class="seerbit-radiant-beacon">
-                                    <span class="seerbit-beep-dot"></span>
-                                    <span class="seerbit-beep-dot"></span>
-                                    <span class="seerbit-beep-dot"></span>
-                                </div>
                             </div>
                         </t>
 
@@ -204,6 +240,12 @@
                                         <div class="fs-2 fw-bolder font-monospace my-1 text-truncate" style="color: #15803D;">
                                             <t t-esc="expectedAmountFormatted"/>
                                         </div>
+                                        <button t-if="isDynamic and hasGeneratedDynamicVa and !state.isExpired" 
+                                                class="btn btn-sm btn-outline-success fw-bold w-100 mt-2 shadow-sm"
+                                                style="background: #ffffff; border-color: #16A34A; color: #15803D;"
+                                                t-on-click="onChangeAmount">
+                                            <i class="fa fa-undo me-1"/> Change Amount
+                                        </button>
                                     </div>
 
                                     <!-- Squeezed Bank Account Card -->
@@ -225,6 +267,19 @@
                                             <div class="small fw-bold text-truncate" style="color: #1E293B;" t-att-title="accountName">
                                                 <t t-esc="accountName"/>
                                             </div>
+                                        </div>
+
+                                        <!-- Actions inside Squeezed Card -->
+                                        <div class="pt-2 border-top mt-2 d-flex flex-column gap-2" style="border-color: #E2E8F0 !important;">
+                                            <button class="btn btn-sm seerbit-btn-outline-primary fw-bold w-100 shadow-sm"
+                                                    t-on-click="togglePaymentsList">
+                                                <i class="fa fa-arrow-left me-1"/> Back to Account View
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-dark fw-bold w-100 shadow-sm"
+                                                    style="border-color: #94A3B8; color: #1E293B;"
+                                                    t-on-click="_closeModal">
+                                                Close
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -248,15 +303,19 @@
                                             <t t-if="state.syncingPayments">Checking...</t>
                                             <t t-else="">Refresh</t>
                                         </button>
+                                        <button class="btn btn-sm seerbit-btn-outline-primary px-3 fw-bold shadow-sm flex-shrink-0"
+                                                t-on-click="togglePaymentsList">
+                                            <i class="fa fa-arrow-left me-1"/> Back to Account View
+                                        </button>
                                     </div>
 
                                     <!-- Payments Table (Scrollable) -->
                                     <div class="table-responsive flex-grow-1 border rounded" style="max-height: 380px; overflow-y: auto;">
                                         <t t-if="state.loadingPayments">
-                                            <div class="text-center py-5">
-                                                <div class="spinner-border mb-2" style="color: #EB3E25;" role="status"/>
-                                                <div class="fw-bold text-muted">Checking incoming bank transfers...</div>
-                                            </div>
+                                             <div class="text-center py-5">
+                                                 <div class="spinner-border mb-2" style="color: #EB3E25;" role="status"/>
+                                                 <div class="fw-bold text-muted">Checking incoming bank transfers...</div>
+                                             </div>
                                         </t>
                                         <t t-elif="!filteredPayments.length">
                                             <div class="text-center py-5 text-muted">
@@ -309,49 +368,6 @@
                         </t>
 
                     </t>
-                </div>
-
-                <!-- Modal Footer (Cozy theme, space-sustaining) -->
-                <div t-if="!state.isSuccess" class="modal-footer d-flex justify-content-between align-items-center px-4 py-2 border-top bg-light">
-                    <!-- Left: Change Amount (Dynamic only) -->
-                    <div>
-                        <button t-if="isDynamic and hasGeneratedDynamicVa and !state.isExpired" 
-                                class="btn btn-sm btn-outline-secondary fw-bold px-3 py-1 shadow-sm"
-                                style="color: #1F2937 !important; border-color: #94A3B8 !important;"
-                                t-on-click="onChangeAmount">
-                            <i class="fa fa-undo me-1"/> Change Amount
-                        </button>
-                        <button t-elif="isDynamic and state.isExpired" 
-                                class="btn btn-sm btn-danger fw-bold px-3 py-1 shadow-sm"
-                                t-on-click="generateDynamicVa">
-                            <i class="fa fa-refresh me-1"/> Generate New Account
-                        </button>
-                    </div>
-
-                    <!-- Right: Seerbit Primary Toggle & Close -->
-                    <div class="d-flex align-items-center gap-2">
-                        <!-- Toggle Button (Check Payment / Back to Details) -->
-                        <button t-if="hasGeneratedDynamicVa and state.showPaymentsList" 
-                                class="btn btn-sm seerbit-btn-outline-primary fw-bold px-3 py-1 shadow-sm"
-                                t-on-click="togglePaymentsList">
-                            <i class="fa fa-arrow-left me-1"/> Back to Account View
-                        </button>
-                        <button t-elif="hasGeneratedDynamicVa" 
-                                class="btn btn-sm seerbit-btn-primary fw-bold px-3 py-1 shadow-sm d-flex align-items-center"
-                                t-on-click="togglePaymentsList">
-                            <i class="fa fa-list-alt me-1"/>
-                            <span>Check / Select Bank Payment</span>
-                            <span t-if="state.unmatchedCount > 0" class="badge bg-white text-danger ms-1 fw-bold">
-                                <t t-esc="state.unmatchedCount"/> new
-                            </span>
-                        </button>
-
-                        <button class="btn btn-sm btn-dark fw-bold px-3 py-1 seerbit-btn-dark shadow-sm" 
-                                style="background-color: #1F2937 !important; color: #ffffff !important; border-color: #1F2937 !important;"
-                                t-on-click="_closeModal">
-                            <span style="color: #ffffff !important;">Close</span>
-                        </button>
-                    </div>
                 </div>
 
             </div>
