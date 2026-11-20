@@ -62,7 +62,8 @@ export class SeerbitIncomingPaymentsPopup extends Component {
 
     get vaId() {
         const v = this.props.vaId;
-        return Array.isArray(v) ? v[0] : (typeof v === "object" && v !== null ? v.id : v);
+        const id = Array.isArray(v) ? v[0] : (typeof v === "object" && v !== null ? v.id : v);
+        return id ? parseInt(id, 10) : null;
     }
 
     get filteredPayments() {
@@ -121,11 +122,17 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         // 1. Immediately fetch from local Odoo DB first (sub-50ms)
         await this.fetchPayments();
         try {
-            await this.orm.call(
-                "seerbit.virtual.account",
-                "action_refresh_balance",
-                [[this.vaId]]
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
             );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {
@@ -159,11 +166,17 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         if (!this.vaId || this._isSpoolingQuietly) return;
         this._isSpoolingQuietly = true;
         try {
-            await this.orm.call(
-                "seerbit.virtual.account",
-                "action_refresh_balance",
-                [[this.vaId]]
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Quiet sync timed out")), 6000)
             );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
         } catch (err) {
             console.debug("Quiet Seerbit background spool warning:", err);
         }

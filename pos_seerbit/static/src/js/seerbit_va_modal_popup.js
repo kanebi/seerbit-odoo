@@ -134,7 +134,7 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     get paymentLine() {
-        return this.props.paymentLine;
+        return this.props.paymentLine || (this.pos?.getOrder ? this.pos.getOrder()?.getSelectedPaymentline?.() : this.pos?.get_order?.()?.get_selected_paymentline?.());
     }
 
     get pos() {
@@ -142,7 +142,14 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     get paymentMethod() {
-        return this.paymentLine?.payment_method_id;
+        const pm = this.paymentLine?.payment_method_id;
+        if (pm && typeof pm === "object") {
+            return pm;
+        }
+        if (typeof pm === "number" && this.pos?.models) {
+            return this.pos.models["pos.payment.method"]?.get?.(pm) || this.pos.payment_methods?.find?.(m => m.id === pm);
+        }
+        return pm || null;
     }
 
     get isDynamic() {
@@ -161,7 +168,15 @@ export class SeerbitVaModalPopup extends Component {
             return this.state.dynamicVa?.va_id || this.paymentLine?.seerbit_dynamic_va_id;
         }
         const va = this.paymentMethod?.seerbit_va_id;
-        return Array.isArray(va) ? va[0] : (typeof va === "object" && va !== null ? va.id : va);
+        let id = Array.isArray(va) ? va[0] : (typeof va === "object" && va !== null ? va.id : va);
+        if (!id && this.paymentMethod?.id && this.pos?.models) {
+            const pmRec = this.pos.models["pos.payment.method"]?.get?.(this.paymentMethod.id);
+            if (pmRec?.seerbit_va_id) {
+                const pva = pmRec.seerbit_va_id;
+                id = Array.isArray(pva) ? pva[0] : (typeof pva === "object" && pva !== null ? pva.id : pva);
+            }
+        }
+        return id ? parseInt(id, 10) : null;
     }
 
     get accountNumber() {
@@ -401,11 +416,17 @@ export class SeerbitVaModalPopup extends Component {
         if (!this.vaId || this.state.isSuccess || this._isSpoolingQuietly) return;
         this._isSpoolingQuietly = true;
         try {
-            await this.orm.call(
-                "seerbit.virtual.account",
-                "action_refresh_balance",
-                [[this.vaId]]
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Quiet sync timed out")), 6000)
             );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
         } catch (err) {
             console.debug("Quiet Seerbit background spool warning:", err);
         }
@@ -466,11 +487,17 @@ export class SeerbitVaModalPopup extends Component {
         // so webhook/cron received payments display immediately without waiting for SeerBit external API
         await this.fetchPayments();
         try {
-            await this.orm.call(
-                "seerbit.virtual.account",
-                "action_refresh_balance",
-                [[this.vaId]]
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
             );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {

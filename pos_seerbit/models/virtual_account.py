@@ -153,15 +153,30 @@ class SeerbitVirtualAccount(models.Model):
                     if p.get('gatewayCode') != '00':
                         continue
                     ref = p.get('paymentReference') or p.get('reference') or p.get('transactionRef')
+                    if not ref:
+                        continue
                     amount = float(p.get('amount') or 0.0)
                     payer = p.get('fullName') or p.get('fullname') or p.get('originatorName') or p.get('customerName') or p.get('payerName') or 'Bank Customer'
+
+                    payment_date = None
+                    raw_dt = p.get('createdAt') or p.get('paymentDate') or p.get('date')
+                    if raw_dt:
+                        try:
+                            clean_dt = str(raw_dt).replace('Z', '').split('.')[0]
+                            if 'T' in clean_dt:
+                                payment_date = datetime.datetime.fromisoformat(clean_dt)
+                            else:
+                                payment_date = fields.Datetime.from_string(clean_dt)
+                        except Exception:
+                            payment_date = None
 
                     Transaction.register_inbound_transaction(
                         va=self,
                         reference=ref,
                         amount=amount,
                         payer_name=payer,
-                        raw_payload=p
+                        raw_payload=p,
+                        payment_date=payment_date
                     )
             except Exception as e:
                 _logger.error(f"Error fetching POS VA payments: {e}")

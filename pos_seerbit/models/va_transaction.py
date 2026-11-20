@@ -267,9 +267,9 @@ class SeerbitVaTransaction(models.Model):
             except Exception as e:
                 _logger.warning("Failed to parse order_created_at_str %s: %s", order_created_at_str, e)
         elif va.va_type == 'pos_static':
-            # For static store virtual accounts, display all unmatched payments from recent days (last 48 hours)
+            # For static store virtual accounts, display all unmatched payments from recent days (last 7 days)
             # so legitimate transfers before or during checkout are immediately visible to the cashier
-            cutoff_dt = fields.Datetime.now() - datetime.timedelta(hours=48)
+            cutoff_dt = fields.Datetime.now() - datetime.timedelta(days=7)
             domain.append(('payment_date', '>=', fields.Datetime.to_string(cutoff_dt)))
 
         records = self.search_read(
