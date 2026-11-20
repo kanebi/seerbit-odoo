@@ -1,5 +1,5 @@
 # Seerbit Odoo POS Integration Dependencies
-# Compatible with Odoo 16 and Odoo.sh environment
+# Compatible with Odoo 19
 
 # Firebase/Firestore Dependencies
 firebase-admin>=2.0.0

@@ -12,7 +12,7 @@ class ResPartner(models.Model):
         'seerbit.virtual.account', 'partner_id', string='Virtual Accounts'
     )
     seerbit_va_balance = fields.Monetary(
-        string='Total VA Balance', 
+        string='Total VA Balance',
         compute='_compute_seerbit_va_balance',
         help="Outstanding credits across all Virtual Accounts for this customer."
     )
@@ -24,56 +24,66 @@ class ResPartner(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         partners = super(ResPartner, self).create(vals_list)
+        if self.env.context.get('labule_skip_seerbit_va'):
+            return partners
         for partner in partners:
-            if not partner.parent_id and partner.email:
-                # Attempt to auto-create VA if email is provided and it's a top-level contact (individual or company)
+            # Internal ERP users (and other non-customer contacts) must not trigger VA API calls.
+            if (
+                not partner.parent_id
+                and partner.email
+                and (partner.customer_rank > 0 or partner.supplier_rank > 0)
+            ):
                 try:
                     partner.action_create_seerbit_va()
                 except Exception as e:
-                    _logger.warning(f"Could not auto-create Seerbit VA for {partner.name}: {e}")
+                    _logger.warning(
+                        "Could not auto-create Seerbit VA for %s: %s",
+                        partner.name,
+                        e,
+                    )
         return partners
 
     def action_create_seerbit_va(self):
         self.ensure_one()
         if not self.email:
             raise UserError(_("Customer must have an email address to create a Virtual Account."))
-            
-        SeerbitAPI = self.env['pos_seerbit.services']._get_api() if hasattr(self.env, 'pos_seerbit.services') else None
-        if not SeerbitAPI:
-            from ..services.seerbit_api import SeerbitAPI as APIClass
-            SeerbitAPI = APIClass(self.env)
-            
+
+        company = self.company_id or self.env.company
+        from ..services.seerbit_api import SeerbitAPI
+        api_client = SeerbitAPI(self.env, company=company)
+
         reference = f"VA_{self.id}_{uuid.uuid4().hex[:8]}"
-        
+
         try:
-            res = SeerbitAPI.create_virtual_account(
+            res = api_client.create_virtual_account(
                 full_name=self.name,
                 reference=reference,
                 email=self.email
             )
-            
+
             payments_data = res.get('payments', {})
-            
+
             # Create a bank account record in Odoo
             bank = self.env['res.bank'].search([('name', '=', payments_data.get('bankName'))], limit=1)
             if not bank:
                 bank = self.env['res.bank'].create({'name': payments_data.get('bankName')})
-                
+
             self.env['res.partner.bank'].create({
                 'acc_number': payments_data.get('accountNumber'),
                 'partner_id': self.id,
                 'bank_id': bank.id,
             })
-            
-            # Create the virtual account record
+
+            # Create the virtual account record pinned to the Seerbit business company
             self.env['seerbit.virtual.account'].create({
                 'partner_id': self.id,
+                'company_id': company.id,
                 'reference': payments_data.get('reference', reference),
                 'account_number': payments_data.get('accountNumber'),
                 'bank_name': payments_data.get('bankName'),
                 'name': payments_data.get('walletName'),
             })
-            
+
         except Exception as e:
             raise UserError(_("Error creating Virtual Account: %s" % str(e)))
 
@@ -94,7 +104,7 @@ class ResPartner(models.Model):
     def _reconcile_seerbit_payment(self, payment):
         if payment.state != 'in_process':
             return
-            
+
         liquidity_lines, _, _ = payment._seek_for_lines()
         if not liquidity_lines:
             _logger.warning(f"Seerbit Recon: No liquidity lines found for payment {payment.name}")
@@ -102,11 +112,11 @@ class ResPartner(models.Model):
             _logger.warning(f"Seerbit Recon Debug {payment.name}: Move State is {payment.move_id.state}")
             for l in payment.move_id.line_ids:
                 _logger.warning(f"Seerbit Recon Debug {payment.name}: Line {l.id} has account {l.account_id.code} - {l.account_id.name} (Type: {l.account_id.account_type}). Debit: {l.debit}, Credit: {l.credit}")
-            
+
             valid_accs = [a.name for a in payment._get_valid_liquidity_accounts()]
             _logger.warning(f"Seerbit Recon Debug {payment.name}: Valid Liquidity Accounts expected by Odoo: {valid_accs}")
             return
-            
+
         st_line = self.env['account.bank.statement.line'].create({
             'payment_ref': payment.memo or 'Seerbit Payment',
             'journal_id': payment.journal_id.id,
@@ -114,10 +124,10 @@ class ResPartner(models.Model):
             'date': payment.date,
             'partner_id': payment.partner_id.id,
         })
-        
+
         if st_line.move_id.state == 'draft':
             st_line.move_id.action_post()
-            
+
         suspense_line = st_line.move_id.line_ids.filtered(lambda l: l.account_id == st_line.journal_id.suspense_account_id)
         if not suspense_line:
             # Fallback if no suspense account explicitly set

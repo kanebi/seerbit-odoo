@@ -1,0 +1,9 @@
+# Technical specifications directory
+specs/
+
+# Ensure test files are tracked
+!tests/
+!tests/**
+__pycache__/
+*.py[cod]
+*.pyc

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
-    <!-- Journal creation moved to post_init_hook for Odoo 17/18 compatibility -->
+    <!-- Journal creation moved to post_init_hook for Odoo 19 compatibility -->
     <!-- The Seerbit journal is now created programmatically in hooks.py -->
     
     <!-- Payment method record - noupdate to prevent recreation conflicts -->

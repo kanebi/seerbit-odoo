@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Seerbit Odoo Point of Sale",
-    "version": "0.1.5",
+    "version": "0.2.8",
     "category": "Sales/Point of Sale",
     "summary": "Integrate your POS with a Seerbit payment terminal with real-time payment and reconciliation.",
     "description": """
@@ -15,22 +15,26 @@
         - Configurable through Odoo settings
         
         # Compatibility:
-        - Odoo 17.0, 18.0
+        - Odoo 18.0
     """,
     "author": "Seerbit",
     "website": "https://github.com/seerbit/seerbit-odoo",
     "data": [
+        "security/seerbit_groups.xml",
         "security/ir.model.access.csv",
         "data/account_journal.xml",
         "data/cron.xml",
+        "data/ir_sequence_data.xml",
         "wizard/seerbit_invoice_payment_wizard_views.xml",
         "wizard/account_move_send_wizard_views.xml",
         "wizard/payment_link_wizard_views.xml",
         "views/res_config_settings_views.xml",
         "views/pos_payment_method_views.xml",
+        "views/pos_order_views.xml",
         "views/res_partner_views.xml",
         "views/account_move_views.xml",
         "views/virtual_account_views.xml",
+        "views/va_transaction_views.xml",
         "views/payout_views.xml",
         "views/payment_link_views.xml",
         "views/account_payment_views.xml",
@@ -41,6 +45,7 @@
     "depends": [
         "point_of_sale",
         "account",
+        "payment",
     ],
     "installable": True,
     "application": False,
@@ -74,6 +79,13 @@
             "pos_seerbit/static/src/js/payment_seerbit.js",
             "pos_seerbit/static/src/js/firebase_listener.js",
             "pos_seerbit/static/src/scss/pos.scss",
+            "pos_seerbit/static/src/js/seerbit_incoming_payments_popup.js",
+            "pos_seerbit/static/src/js/seerbit_va_payment_widget.js",
+            "pos_seerbit/static/src/js/seerbit_va_modal_popup.js",
+            "pos_seerbit/static/src/js/pos_bus_listener.js",
+            "pos_seerbit/static/src/xml/SeerbitVaPaymentWidget.xml",
+            "pos_seerbit/static/src/xml/SeerbitVaModalPopup.xml",
+            "pos_seerbit/static/src/xml/SeerbitIncomingPaymentsPopup.xml",
             "pos_seerbit/static/src/xml/PaymentScreenPaymentLines.xml",
             
         ],

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-name="pos_seerbit.SeerbitIncomingPaymentsPopup">
+        <Dialog size="'xl'" header="false" footer="false" withBodyPadding="false" contentClass="'seerbit-incoming-modal-content p-0'">
+            <div class="seerbit-incoming-payments-modal d-flex flex-column bg-white">
+                
+                <!-- Slim Top Header (Replaces unneeded native Odoo header) -->
+                <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-light">
+                    <div class="d-flex align-items-center">
+                        <img src="/pos_seerbit/static/description/seerbit_logo.png" 
+                             onerror="this.src='/pos_seerbit/static/description/icon.png'" 
+                             alt="SeerBit" 
+                             class="me-2 rounded shadow-sm" 
+                             style="height: 24px; width: auto; object-fit: contain;"/>
+                        <span class="fs-6 fw-bolder text-dark">Select Bank Payment</span>
+                    </div>
+                    <button class="btn btn-close fs-6 p-1" aria-label="Close" t-on-click="props.close"/>
+                </div>
+
+                <div class="p-3 overflow-y-auto" style="max-height: calc(85vh - 100px);">
+                    <!-- Top Summary & Refresh -->
+                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded border">
+                        <div>
+                            <span class="small fw-bold" style="color: #374151;">Account:</span>
+                            <strong class="font-monospace fs-6 text-dark ms-1"><t t-esc="props.accountNumber"/></strong>
+                            <span class="small fw-bold ms-3" style="color: #374151;">Amount Needed:</span>
+                            <strong class="text-success fs-6 ms-1"><t t-esc="formatAmount(props.expectedAmount)"/></strong>
+                        </div>
+                        <div>
+                            <button class="btn btn-primary btn-sm px-3 py-1 fw-bold shadow-sm"
+                                    t-att-disabled="state.syncing"
+                                    t-on-click="syncLiveFromSeerbit">
+                                <i t-attf-class="fa #{state.syncing ? 'fa-spinner fa-spin' : 'fa-refresh'} me-1"/>
+                                <t t-if="state.syncing">Checking...</t>
+                                <t t-else="">Refresh</t>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Search -->
+                    <div class="input-group mb-2">
+                        <span class="input-group-text py-1"><i class="fa fa-search" style="color: #374151;"/></span>
+                        <input type="text"
+                               class="form-control form-control-sm"
+                               placeholder="Search by customer name, reference, or amount..."
+                               t-model="state.searchQuery"/>
+                    </div>
+
+                    <!-- Payments Table / List -->
+                    <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+                        <t t-if="state.loading">
+                            <div class="text-center py-4">
+                                <i class="fa fa-circle-o-notch fa-spin fa-2x text-primary mb-2"/>
+                                <div class="fw-bold" style="color: #374151;">Checking payments...</div>
+                            </div>
+                        </t>
+                        <t t-elif="!filteredPayments.length">
+                            <div class="text-center py-4" style="color: #374151;">
+                                <i class="fa fa-inbox fa-2x mb-2" style="color: #4b5563;"/>
+                                <div class="fs-6 fw-bold text-dark">No bank transfers found yet.</div>
+                                <div class="small mt-1" style="color: #374151;">If the customer has already transferred, click <strong>Refresh</strong> above.</div>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <table class="table table-hover table-sm align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="color: #1f2937;">Time</th>
+                                        <th style="color: #1f2937;">Sender Name</th>
+                                        <th style="color: #1f2937;">Amount</th>
+                                        <th style="color: #1f2937;">Reference</th>
+                                        <th style="color: #1f2937;">Status</th>
+                                        <th class="text-end" style="color: #1f2937;">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="filteredPayments" t-as="p" t-key="p.id"
+                                        t-att-class="{'table-success': isExactAmount(p.amount)}">
+                                        <td class="small fw-semibold" style="color: #374151;"><t t-esc="formatDate(p.payment_date)"/></td>
+                                        <td>
+                                            <strong class="small text-dark"><t t-esc="p.payer_name"/></strong>
+                                        </td>
+                                        <td>
+                                            <span class="small fw-bold text-dark"><t t-esc="formatAmount(p.amount)"/></span>
+                                            <span t-if="isExactAmount(p.amount)" class="badge bg-success ms-1 small fw-bold">Exact Match</span>
+                                        </td>
+                                        <td class="font-monospace small fw-semibold" style="color: #374151;"><t t-esc="p.reference"/></td>
+                                        <td>
+                                            <span class="badge bg-success">Received</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <button class="btn btn-success btn-sm px-2 py-1 fw-bold"
+                                                    t-on-click="() => this.selectPayment(p)">
+                                                <i class="fa fa-check me-1"/> Select
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </t>
+                    </div>
+                </div>
+
+                <!-- Footer with Smaller Buttons -->
+                <div class="modal-footer d-flex justify-content-end align-items-center px-3 py-2 border-top bg-light">
+                    <button class="btn btn-sm btn-dark px-3 py-1 fw-bold shadow-sm seerbit-btn-dark" style="background-color: #1f2937 !important; color: #ffffff !important; border-color: #1f2937 !important;" t-on-click="props.close">
+                        <span style="color: #ffffff !important;">Close</span>
+                    </button>
+                </div>
+
+            </div>
+        </Dialog>
+    </t>
+</templates>

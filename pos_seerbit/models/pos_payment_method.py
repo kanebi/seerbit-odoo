@@ -27,8 +27,8 @@ try:
     
     # Check firebase-admin version for compatibility
     try:
-        import pkg_resources
-        firebase_version = pkg_resources.get_distribution("firebase-admin").version
+        from importlib.metadata import version as pkg_version
+        firebase_version = pkg_version("firebase-admin")
         _logger.info("Firebase Admin SDK version: %s", firebase_version)
     except Exception:
         _logger.info("Firebase Admin SDK version: unknown")
@@ -41,7 +41,7 @@ except ImportError as e:
     _logger.warning("Firebase Admin SDK not available: %s", str(e))
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError
 from werkzeug.exceptions import Forbidden
 
 from odoo.addons.pos_seerbit.utils import format_erp_ref
@@ -198,63 +198,301 @@ def send_to_firestore_transactions(env, payload):
 
 class PosPaymentMethod(models.Model):
     _inherit = "pos.payment.method"
-    
-    # Seerbit Fields
-    seerbit_public_key = fields.Char(
-        string="Seerbit Public Key", 
-        help="As provided on Seerbit dashboard", 
-        compute="_compute_seerbit_public_key",
-        store=True,
+
+    def _get_payment_method_type(self):
+        selection = super()._get_payment_method_type()
+        if not any(k == 'transfer' for k, _v in selection):
+            selection.append(('transfer', _("Transfer")))
+        return selection
+
+    seerbit_transfer_type = fields.Selection([
+        ('static', 'Static'),
+        ('dynamic', 'Dynamic')
+    ], string="Transfer Type", default='static')
+
+    seerbit_va_id = fields.Many2one(
+        'seerbit.virtual.account',
+        string="Static Virtual Account",
+        domain="[('company_id', '=', company_id), ('va_type', '=', 'pos_static')]",
+        ondelete='restrict'
+    )
+
+    seerbit_va_account_number = fields.Char(
+        related='seerbit_va_id.account_number',
+        string="Account Number",
+        readonly=True
+    )
+    seerbit_va_bank_name = fields.Char(
+        related='seerbit_va_id.bank_name',
+        string="Bank Name",
+        readonly=True
+    )
+    seerbit_va_name = fields.Char(
+        related='seerbit_va_id.name',
+        string="Account Name",
         readonly=True
     )
 
-    @api.depends('use_payment_terminal')
-    def _compute_seerbit_public_key(self):
-        public_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_public_key', default='')
-        for pm in self:
-            if pm.use_payment_terminal == 'seerbit':
-                pm.seerbit_public_key = public_key
-            else:
-                pm.seerbit_public_key = False
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        for record in records:
+            if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
+                try:
+                    record._generate_static_va()
+                except Exception as e:
+                    _logger.warning("Could not auto-generate Static Virtual Account on create for %s: %s", record.name, e)
+            elif record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
+                record.seerbit_va_id = False
+        return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        for record in self:
+            if record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'dynamic' and record.seerbit_va_id:
+                record.seerbit_va_id = False
+            elif record.payment_method_type == 'transfer' and record.seerbit_transfer_type == 'static' and not record.seerbit_va_id:
+                # If static VA is not set, generate a new dedicated VA on save
+                try:
+                    record._generate_static_va()
+                except Exception as e:
+                    _logger.warning("Could not auto-generate Static Virtual Account on write for %s: %s", record.name, e)
+        return res
+
+    @api.onchange('payment_method_type', 'seerbit_transfer_type')
+    def _onchange_seerbit_payment_method_type(self):
+        if self.payment_method_type != 'transfer':
+            self.seerbit_va_id = False
+            self.seerbit_transfer_type = 'static'
+        elif self.seerbit_transfer_type == 'dynamic':
+            self.seerbit_va_id = False
+
+    def _generate_static_va(self, force=False):
+        """
+        Creates and links a new Static Virtual Account via SeerBit API.
+        Used on save (create/write) when seerbit_va_id is empty, or explicitly via button action.
+        Dynamic transfer methods NEVER generate a VA on save/creation.
+        """
+        self.ensure_one()
+        if self.payment_method_type != 'transfer' or self.seerbit_transfer_type != 'static':
+            return False
+        if not force and self.seerbit_va_id and self.seerbit_va_id.account_number:
+            return self.seerbit_va_id
+
+        company = self.company_id or self.env.company
+        if not company.seerbit_public_key:
+            _logger.info("Company %s has no SeerBit public key configured. Skipping VA generation.", company.name)
+            return False
+
+        partner = company.partner_id
+        email = partner.email or 'pos@seerbit.com'
+        email_user, email_domain = email.split('@') if '@' in email else (email, 'seerbit.com')
+
+        from ..services.seerbit_api import SeerbitAPI
+        api_client = SeerbitAPI(self.env, company=company)
+
+        import uuid
+        tag = uuid.uuid4().hex[:6]
+        va_ref = f"POS_STATIC_{self.id or tag}_{uuid.uuid4().hex[:4]}"
+        va_name = f"{company.name} - {self.name}"
+        # Use unique email per static account so SeerBit reserves a dedicated customer account
+        unique_email = f"{email_user}+pos_{self.id or tag}@{email_domain}"
+
+        try:
+            with self.env.cr.savepoint():
+                res = api_client.create_virtual_account(
+                    full_name=va_name,
+                    reference=va_ref,
+                    email=unique_email,
+                )
+                payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
+                account_number = payments_data.get('accountNumber') if isinstance(payments_data, dict) else False
+                bank_name = payments_data.get('bankName', 'SeerBit Bank') if isinstance(payments_data, dict) else 'SeerBit Bank'
+
+                if not account_number:
+                    err_msg = res.get('message') or (payments_data.get('message') if isinstance(payments_data, dict) else '')
+                    raise UserError(_("SeerBit did not return an account number: %s") % (err_msg or _("Please check company credentials.")))
+
+                # Create or fetch bank
+                bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
+                if not bank:
+                    bank = self.env['res.bank'].create({'name': bank_name})
+
+                # Register in partner bank
+                self.env['res.partner.bank'].create({
+                    'acc_number': account_number,
+                    'partner_id': partner.id,
+                    'bank_id': bank.id,
+                })
+
+                # Create VA model record
+                va_record = self.env['seerbit.virtual.account'].create({
+                    'name': payments_data.get('walletName', va_name),
+                    'company_id': company.id,
+                    'partner_id': partner.id,
+                    'reference': payments_data.get('reference', va_ref),
+                    'account_number': account_number,
+                    'bank_name': bank_name,
+                    'va_type': 'pos_static',
+                })
+
+                self.seerbit_va_id = va_record.id
+                return va_record
+        except UserError:
+            raise
+        except Exception as e:
+            _logger.error("Failed to generate Static Virtual Account for %s: %s", self.name, e)
+            raise UserError(_("Failed to generate Virtual Account from SeerBit: %s") % str(e))
+
+    def action_generate_static_va(self):
+        """
+        Creates a new Static Virtual Account via SeerBit API and links it.
+        Uses the merchant's configured company credentials.
+        """
+        self.ensure_one()
+        if self.payment_method_type != 'transfer':
+            raise UserError(_("Payment method must be configured as Integration: Transfer."))
+        if self.seerbit_transfer_type != 'static':
+            raise UserError(_("Virtual Account generation is only applicable for Static Transfer Type. Dynamic Virtual Accounts are generated automatically per order during POS checkout."))
+
+        company = self.company_id or self.env.company
+        partner = company.partner_id
+        if not partner.email:
+            raise UserError(_("The company '%s' must have an email address to create a Virtual Account.") % company.name)
+
+        va = self._generate_static_va(force=True)
+        if not va:
+            raise UserError(_("Failed to generate Virtual Account. Please verify your company SeerBit configuration."))
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _("Success"),
+                'message': _("Static Virtual Account successfully generated (%s: %s)") % (
+                    va.bank_name, va.account_number
+                ),
+                'type': 'success',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'reload'},
+            }
+        }
+
+    def create_dynamic_va_for_pos(self, order_ref, amount, customer_name=None, customer_email=None):
+        """
+        Called during POS checkout when using a Dynamic Transfer payment method.
+        Generates a unique dynamic virtual account from SeerBit API tied to the order and amount.
+        """
+        self.ensure_one()
+        if self.payment_method_type != 'transfer' or self.seerbit_transfer_type != 'dynamic':
+            raise UserError(_("Dynamic VA can only be generated for Dynamic Transfer payment methods."))
+        if not amount or float(amount) <= 1.0:
+            raise UserError(_("Transfer payment amount must be greater than 1.00."))
+
+        company = self.company_id or self.env.company
+        partner = company.partner_id
+
+        import uuid
+        token = uuid.uuid4().hex[:6]
+        clean_order_ref = "".join(c for c in (order_ref or 'ORD') if c.isalnum() or c in ('-', '_'))
+        reference = f"POS_DYN_{clean_order_ref}_{token}"
+
+        # SeerBit limits active reserved accounts per customer email (Error S12: "You cannot reserve more than 1 account(s) for a customer").
+        # If customer email is provided, append a tag to prevent collision on amount changes/retries.
+        # Otherwise, use an order-specific unique email.
+        if customer_email and '@' in customer_email:
+            local, domain = customer_email.split('@', 1)
+            email = f"{local}+{token}@{domain}"
+        else:
+            email = f"order_{clean_order_ref}_{token}@seerbit.com"
+
+        name = customer_name or f"Order {order_ref}"
+
+        from ..services.seerbit_api import SeerbitAPI
+        api_client = SeerbitAPI(self.env, company=company)
+
+        res = api_client.create_dynamic_virtual_account(
+            reference=reference,
+            amount=amount,
+            customer_name=name,
+            customer_email=email,
+            expiry_minutes=30,
+        )
+
+        payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
+        account_number = payments_data.get('accountNumber') or res.get('accountNumber')
+        bank_name = payments_data.get('bankName') or res.get('bankName', 'SeerBit Bank')
+        wallet_name = payments_data.get('walletName') or res.get('walletName', name)
+        assigned_ref = payments_data.get('paymentReference') or payments_data.get('reference') or res.get('reference', reference)
+
+        bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
+        if not bank:
+            bank = self.env['res.bank'].create({'name': bank_name})
+
+        va_record = self.env['seerbit.virtual.account'].create({
+            'name': wallet_name,
+            'company_id': company.id,
+            'partner_id': partner.id,
+            'reference': assigned_ref,
+            'account_number': account_number,
+            'bank_name': bank_name,
+            'va_type': 'pos_dynamic',
+        })
+
+        return {
+            'va_id': va_record.id,
+            'account_number': account_number,
+            'bank_name': bank_name,
+            'account_name': wallet_name,
+            'reference': assigned_ref,
+            'amount': amount,
+            'expiry_minutes': 30,
+        }
+    
+    # Branch public key comes from company Seerbit settings (not stored per payment method).
+    seerbit_public_key = fields.Char(
+        string="Seerbit Public Key",
+        compute='_compute_seerbit_public_key',
+        help="Resolved from this payment method's company Seerbit settings.",
+    )
     seerbit_terminal_id = fields.Char(
         string="Seerbit Terminal ID", 
         help="Terminal ID as provided on Seerbit dashboard", 
         copy=False
     )
-    seerbit_latest_response = fields.Char(
-        copy=False, 
-        groups="base.group_erp_manager"
-    )  # used to buffer the latest asynchronous notification from Seerbit.
-    
+    # Transient buffer for async Seerbit notifications. No field groups — POS session
+    # load reads this as the terminal user; ERP-manager groups caused ACL denials.
+    seerbit_latest_response = fields.Char(copy=False)
+
+    @api.depends('company_id', 'company_id.seerbit_public_key')
+    def _compute_seerbit_public_key(self):
+        for pm in self:
+            pm.seerbit_public_key = pm.company_id.seerbit_public_key or ''
+
     def _get_payment_terminal_selection(self):
         
         return super()._get_payment_terminal_selection() + [("seerbit", "Seerbit")]
 
 
     @api.model
-    def _load_pos_data_fields(self, config_id):
-       data = super()._load_pos_data_fields(config_id)
-       data += ['seerbit_terminal_id','seerbit_public_key', 'seerbit_latest_response']
-       return data
+    def _load_pos_data_fields(self, config):
+        data = super()._load_pos_data_fields(config)
+        data += [
+            'seerbit_terminal_id',
+            'seerbit_public_key',
+            'seerbit_latest_response',
+            'seerbit_transfer_type',
+            'seerbit_va_id',
+            'seerbit_va_account_number',
+            'seerbit_va_bank_name',
+            'seerbit_va_name',
+        ]
+        return data
+
     @api.constrains("seerbit_terminal_id")
-    def _check_seerbit_autoconfirm(self):
-        for payment_method in self:
-            if not (payment_method.seerbit_public_key and payment_method.seerbit_terminal_id):
-                continue
-            # Payment methods are now expected to separate at the account levels irrepective of the number of terminals
-            
-            existing_key = self.search(
-                [("id", "!=", payment_method.id), ("seerbit_terminal_id",
-                                                   "=", payment_method.seerbit_terminal_id)],
-                limit=1,
-            )
-        
-            if existing_key:
-                # Restricting duplicate terminals
-                raise ValidationError(
-                    _("Seerbit terminal %s is already used on payment method %s.")
-                    % (payment_method.seerbit_terminal_id, existing_key.display_name)
-                )
+    def _check_seerbit_terminal_share(self):
+        """Same terminal ID may be shared across payment methods (e.g. Small Chops 1 & 2)."""
+        return
 
     def _is_write_forbidden(self, fields):
         whitelisted_fields = {"seerbit_latest_response"}

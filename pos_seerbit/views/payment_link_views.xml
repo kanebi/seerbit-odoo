@@ -7,6 +7,7 @@
             <list string="Payment Links">
                 <field name="create_date"/>
                 <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
                 <field name="move_id"/>
                 <field name="amount"/>
                 <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-info="state == 'pending'"/>
@@ -26,6 +27,11 @@
                     <field name="state" widget="statusbar"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_payments" type="object" class="oe_stat_button" icon="fa-money">
+                            <field name="payment_count" widget="statinfo" string="Payments"/>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
@@ -33,7 +39,8 @@
                     </div>
                     <group>
                         <group>
-                            <field name="move_id" readonly="state == 'paid'" domain="[('move_type', 'in', ('out_invoice', 'out_refund'))]" context="{'default_move_type': 'out_invoice'}"/>
+                            <field name="company_id" groups="base.group_multi_company" readonly="state == 'paid'"/>
+                            <field name="move_id" readonly="state == 'paid'" domain="[('move_type', 'in', ('out_invoice', 'out_refund')), ('company_id', '=', company_id)]" context="{'default_move_type': 'out_invoice', 'default_company_id': company_id}"/>
                             <field name="partner_id" readonly="state == 'paid'"/>
                             <field name="email" readonly="state == 'paid'"/>
                             <field name="amount" readonly="state == 'paid'"/>
@@ -43,10 +50,10 @@
                         <group>
                             <field name="link_url" widget="CopyClipboardChar" readonly="1"/>
                             <field name="seerbit_link_id" readonly="1"/>
-                            <field name="payment_id" readonly="1" invisible="not payment_id"/>
                         </group>
                     </group>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>

@@ -3,12 +3,13 @@ from odoo import models, fields, api
 import threading
 import odoo
 
-def threaded_send_invoice(db_name, uid, invoice_no):
+def threaded_send_invoice(db_name, uid, invoice_no, company_id):
     registry = odoo.registry(db_name)
     with registry.cursor() as cr:
         env = api.Environment(cr, uid, {})
         from ..services.seerbit_api import SeerbitAPI
-        api_client = SeerbitAPI(env)
+        company = env['res.company'].browse(company_id)
+        api_client = SeerbitAPI(env, company=company)
         try:
             api_client.send_invoice(invoice_no)
         except Exception:
@@ -42,7 +43,7 @@ class AccountMoveSendWizard(models.TransientModel):
                     # Run send_invoice asynchronously so the UI modal closes early
                     threading.Thread(
                         target=threaded_send_invoice, 
-                        args=(self.env.cr.dbname, self.env.uid, wizard.move_id.seerbit_invoice_no)
+                        args=(self.env.cr.dbname, self.env.uid, wizard.move_id.seerbit_invoice_no, wizard.move_id.company_id.id)
                     ).start()
 
         return res

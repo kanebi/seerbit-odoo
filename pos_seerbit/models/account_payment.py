@@ -9,3 +9,8 @@ class AccountPayment(models.Model):
         string='Seerbit Virtual Account',
         help="The Virtual Account that received or initiated this payment."
     )
+    seerbit_payment_link_id = fields.Many2one(
+        'pos_seerbit.payment.link',
+        string='Seerbit Payment Link',
+        help="The Payment Link that received this payment."
+    )

@@ -1,80 +1,224 @@
 /** @odoo-module **/
 
-import { PaymentScreen } from '@point_of_sale/app/screens/payment_screen/payment_screen';
-import { patch } from '@web/core/utils/patch';
-import { onMounted, onWillUnmount } from '@odoo/owl';
+import { PaymentScreen } from "@point_of_sale/app/screens/payment_screen/payment_screen";
+import { PaymentScreenPaymentLines } from "@point_of_sale/app/screens/payment_screen/payment_lines/payment_lines";
+import { PosOrder } from "@point_of_sale/app/models/pos_order";
+import { SeerbitVaPaymentWidget } from "./seerbit_va_payment_widget";
+import { SeerbitVaModalPopup } from "./seerbit_va_modal_popup";
+import { patch } from "@web/core/utils/patch";
+import { onMounted, onWillUnmount } from "@odoo/owl";
+import { AlertDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import { _t } from "@web/core/l10n/translation";
 
-// Patch PaymentScreen to handle Seerbit payment line status
+PaymentScreenPaymentLines.components = {
+    ...PaymentScreenPaymentLines.components,
+    SeerbitVaPaymentWidget,
+    SeerbitVaModalPopup,
+};
+
+patch(PaymentScreenPaymentLines.prototype, {
+    toggleSeerbitAccordion(line) {
+        line.seerbit_expanded = !line.seerbit_expanded;
+    },
+    openSeerbitModal(line) {
+        if (!line || line._seerbit_modal_open) {
+            return;
+        }
+        line._seerbit_modal_open = true;
+        this.dialog.add(SeerbitVaModalPopup, {
+            paymentLine: line,
+            pos: this.pos,
+            validateOrder: () => this.props.validateOrder?.(),
+        }, {
+            onClose: () => {
+                line._seerbit_modal_open = false;
+                delete line._seerbit_modal;
+                if (this.pos && this.pos._active_seerbit_modal?.paymentLine === line) {
+                    this.pos._active_seerbit_modal = null;
+                }
+            }
+        });
+    },
+    async selectLine(paymentline) {
+        await super.selectLine(paymentline);
+        if (paymentline?.payment_method_id?.payment_method_type === "transfer") {
+            const isMatched = Boolean(
+                paymentline.seerbit_is_matched ||
+                paymentline.seerbit_va_transaction_id ||
+                paymentline.seerbit_transaction_ref ||
+                paymentline.payment_status === "done"
+            );
+            if (!isMatched && !paymentline._seerbit_modal_open) {
+                this.openSeerbitModal(paymentline);
+            }
+        }
+    },
+});
+
+patch(PosOrder.prototype, {
+    canBeValidated() {
+        const hasUnmatchedTransfer = (this.payment_ids || []).some(
+            (line) => line.payment_method_id?.payment_method_type === "transfer" &&
+                !line.seerbit_va_transaction_id &&
+                !line.seerbit_transaction_ref &&
+                !line.seerbit_is_matched &&
+                line.payment_status !== "done"
+        );
+        if (hasUnmatchedTransfer) {
+            return false;
+        }
+        return super.canBeValidated();
+    },
+});
+
 patch(PaymentScreen.prototype, {
     setup() {
-        super.setup();
+        super.setup(...arguments);
         onMounted(() => {
-            // Set pending Seerbit payments to waiting status
-            const pendingPaymentLine = this.env.services.pos.getPendingPaymentLine('seerbit')
+            const pendingPaymentLine = this.pos.getPendingPaymentLine("seerbit");
             if (pendingPaymentLine) {
-                console.log('Found pending Seerbit line')
-                pendingPaymentLine.set_payment_status('waitingSeerbit');
+                if (pendingPaymentLine.set_payment_status) {
+                    pendingPaymentLine.set_payment_status("waitingSeerbit");
+                } else if (pendingPaymentLine.setPaymentStatus) {
+                    pendingPaymentLine.setPaymentStatus("waitingSeerbit");
+                }
             }
         });
 
         onWillUnmount(() => {
-            // When leaving the payment screen, ensure any Seerbit processes are stopped.
-            this.paymentLines.forEach(line => {
-                console.log('Checking payment line:', line);
-                if (line.payment_method_id.use_payment_terminal === 'seerbit') {
-                    console.log('Found Seerbit payment line');
-                    // The payment_terminal is the SeerbitPayment instance
-                    if (line.payment_method_id.payment_terminal) {
-                        console.log('Closing Seerbit payment line');
-                        line.payment_method_id.payment_terminal.close();
-                    }
+            this.paymentLines.forEach((line) => {
+                if (line.payment_method_id.use_payment_terminal === "seerbit") {
+                    line.payment_method_id.payment_terminal?.close?.();
                 }
             });
         });
     },
 
-    
-    async sendForceDone(line) {
-        const payment_terminal = line.payment_method_id.payment_terminal;
-         await payment_terminal.send_force_done(
-            line
-        );
-    },
-    paymentMethodImage(id) {
-        if (this.paymentMethod.use_payment_terminal === "seerbit") {
-            return "/pos_seerbit/static/description/icon.png";
-        }
-        if (this.paymentMethod.image) {
-            return `/web/image/pos.payment.method/${id}/image`;
-        } else if (this.paymentMethod.type === "cash") {
-            return "/point_of_sale/static/src/img/money.png";
-        } else if (this.paymentMethod.type === "pay_later") {
-            return "/point_of_sale/static/src/img/pay-later.png";
-        }  else {
-            return "/point_of_sale/static/src/img/card-bank.png";
-        }
-    },
-    deletePaymentLine(uuid) {
-        const line = this.paymentLines.find( (line) => line.uuid === uuid);
-        if (line.payment_method_id.payment_method_type === "qr_code") {
-            this.currentOrder.remove_paymentline(line);
-            this.numberBuffer.reset();
+    openSeerbitModal(line) {
+        if (!line || line._seerbit_modal_open) {
             return;
         }
-        if (["waiting", "waitingSeerbit", "waitingCard", "timeout"].includes(line.get_payment_status()) && line.payment_method_id.payment_terminal) {
-            line.set_payment_status("waitingCancel");
-            this.sendPaymentCancel(line).then( () => {
-            line.payment_method_id.payment_terminal.send_payment_cancel(this.currentOrder, uuid).then( () => {
-                this.currentOrder.remove_paymentline(line);
-                this.numberBuffer.reset();
+        line._seerbit_modal_open = true;
+        this.dialog.add(SeerbitVaModalPopup, {
+            paymentLine: line,
+            pos: this.pos,
+            validateOrder: () => this.validateOrder(),
+        }, {
+            onClose: () => {
+                line._seerbit_modal_open = false;
+                delete line._seerbit_modal;
+                if (this.pos && this.pos._active_seerbit_modal?.paymentLine === line) {
+                    this.pos._active_seerbit_modal = null;
+                }
             }
-            );
-        })
-        } else if (line.get_payment_status() !== "waitingCancel") {
-            this.currentOrder.remove_paymentline(line);
-            this.numberBuffer.reset();
-        }
-    }
+        });
+    },
 
-    
+    async addNewPaymentLine(paymentMethod) {
+        if (paymentMethod?.payment_method_type === "transfer") {
+            const amountDue = this.currentOrder.getDefaultAmountDueToPayIn ?
+                this.currentOrder.getDefaultAmountDueToPayIn(paymentMethod) :
+                (this.currentOrder.get_due ? this.currentOrder.get_due() : this.currentOrder.totalDue);
+            if (amountDue <= 1.0) {
+                this.dialog.add(AlertDialog, {
+                    title: _t("Amount Too Low"),
+                    body: _t("Transfer payment amount must be greater than 1.00."),
+                });
+                return false;
+            }
+        }
+        const res = await super.addNewPaymentLine(paymentMethod);
+        if (res && paymentMethod?.payment_method_type === "transfer") {
+            const selectedLine = this.selectedPaymentLine;
+            if (selectedLine) {
+                if (selectedLine.set_payment_status) {
+                    selectedLine.set_payment_status("waiting_transfer");
+                } else if (selectedLine.setPaymentStatus) {
+                    selectedLine.setPaymentStatus("waiting_transfer");
+                }
+                selectedLine.seerbit_is_matched = false;
+                selectedLine.seerbit_expanded = false;
+
+                this.openSeerbitModal(selectedLine);
+            }
+        }
+        return res;
+    },
+
+    async updateSelectedPaymentline(amount = false) {
+        if (this.selectedPaymentLine?.payment_method_id?.payment_method_type === "transfer") {
+            // Reset cached dynamic account details so a new account for the updated amount can be generated cleanly
+            this.selectedPaymentLine.seerbit_dynamic_account_number = null;
+            this.selectedPaymentLine.seerbit_dynamic_bank_name = null;
+            this.selectedPaymentLine.seerbit_dynamic_account_name = null;
+            this.selectedPaymentLine.seerbit_dynamic_va_id = null;
+            this.selectedPaymentLine.seerbit_dynamic_reference = null;
+            this.selectedPaymentLine.seerbit_dynamic_expires_at = null;
+            this.selectedPaymentLine.seerbit_dynamic_amount = null;
+        }
+        return super.updateSelectedPaymentline(amount);
+    },
+
+    async validateOrder(isForceValidate = false) {
+        const unmatchedTransfer = this.paymentLines.find(
+            (line) => line.payment_method_id?.payment_method_type === "transfer" &&
+                !line.seerbit_va_transaction_id &&
+                !line.seerbit_transaction_ref &&
+                !line.seerbit_is_matched &&
+                line.payment_status !== "done"
+        );
+        if (unmatchedTransfer) {
+            const transferAmt = unmatchedTransfer.get_amount ? unmatchedTransfer.get_amount() : (unmatchedTransfer.getAmount ? unmatchedTransfer.getAmount() : (unmatchedTransfer.amount || 0));
+            this.dialog.add(AlertDialog, {
+                title: _t("Bank Transfer Unmatched"),
+                body: _t("Cannot complete order: Bank transfer payment of %s has not been confirmed or matched yet. Please match the payment before validating.", this.env.utils.formatCurrency(transferAmt)),
+            });
+            return false;
+        }
+        return super.validateOrder(isForceValidate);
+    },
+
+    async sendForceDone(line) {
+        const payment_terminal = line.payment_method_id.payment_terminal;
+        if (payment_terminal?.sendForceDone) {
+            await payment_terminal.sendForceDone(line);
+        }
+        return super.sendForceDone(line);
+    },
+
+    paymentMethodImage(id) {
+        const method = this.payment_methods_from_config.find((m) => m.id === id);
+        if (method?.use_payment_terminal === "seerbit" || method?.payment_method_type === "transfer") {
+            return "/pos_seerbit/static/description/icon.png";
+        }
+        return super.paymentMethodImage(id);
+    },
+
+    deletePaymentLine(uuid) {
+        const line = this.paymentLines.find((paymentLine) => paymentLine.uuid === uuid);
+        const status = line ? (line.get_payment_status ? line.get_payment_status() : (line.getPaymentStatus ? line.getPaymentStatus() : line.payment_status)) : null;
+        if (
+            line &&
+            ["waitingSeerbit", "errorSeerbit"].includes(status) &&
+            line.payment_method_id.payment_terminal
+        ) {
+            if (line.set_payment_status) {
+                line.set_payment_status("waitingCancel");
+            } else if (line.setPaymentStatus) {
+                line.setPaymentStatus("waitingCancel");
+            }
+            line.payment_method_id.payment_terminal
+                .sendPaymentCancel(this.currentOrder, uuid)
+                .then(() => {
+                    if (this.currentOrder.remove_paymentline) {
+                        this.currentOrder.remove_paymentline(line);
+                    } else if (this.currentOrder.removePaymentline) {
+                        this.currentOrder.removePaymentline(line);
+                    }
+                    this.numberBuffer.reset();
+                });
+            return;
+        }
+        return super.deletePaymentLine(uuid);
+    },
 });

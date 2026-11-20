@@ -27,8 +27,9 @@
                     </div>
                     <group>
                         <group>
+                            <field name="company_id" groups="base.group_multi_company" readonly="state != 'draft'"/>
                             <field name="partner_id" readonly="state != 'draft'" options="{'no_create': True}"/>
-                            <field name="move_id" readonly="state != 'draft'" options="{'no_create': True}" context="{'default_partner_id': partner_id, 'default_move_type': 'in_invoice'}"/>
+                            <field name="move_id" readonly="state != 'draft'" options="{'no_create': True}" context="{'default_partner_id': partner_id, 'default_move_type': 'in_invoice', 'default_company_id': company_id}"/>
                             <field name="amount" readonly="state != 'draft'"/>
                             <field name="currency_id" invisible="1"/>
                             <field name="partner_bank_id" readonly="state != 'draft'" invisible="not partner_id"/>
@@ -60,6 +61,7 @@
         <field name="arch" type="xml">
             <list string="Payouts" decoration-info="state == 'draft'" decoration-warning="state == 'pending_otp'" decoration-success="state == 'completed'" decoration-danger="state == 'failed'">
                 <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
                 <field name="create_date"/>
                 <field name="bank_name"/>
                 <field name="account_name"/>

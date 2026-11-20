@@ -5,33 +5,42 @@ from odoo.exceptions import UserError
 _logger = logging.getLogger(__name__)
 
 class SeerbitAPI:
-    def __init__(self, env):
+    def __init__(self, env, company=None):
         self.env = env
-        
-        # Get Secret Key from config
-        self.secret_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_secret_key', default='')
-        
-        # Get Public Key from config
-        self.public_key = self.env['ir.config_parameter'].sudo().get_param('pos_seerbit.seerbit_public_key', default='')
-        
+        self.company = company or env.company
+        if not self.company:
+            raise UserError("Seerbit API requires a company context.")
+
+        company = self.company.sudo()
+        self.secret_key = company.seerbit_secret_key or ''
+        self.public_key = company.seerbit_public_key or ''
+        self._encrypted_key_param = f'pos_seerbit.seerbit_encrypted_key.{company.id}'
+
         self._encrypted_key = None
-        
+
         if not self.secret_key or not self.public_key:
-            _logger.warning("Seerbit Secret Key or Public Key is not configured.")
+            _logger.warning(
+                "Seerbit keys missing for company %s (%s).",
+                company.name,
+                company.id,
+            )
 
     def _get_encrypted_key(self, force_refresh=False):
         if self._encrypted_key and not force_refresh:
             return self._encrypted_key
-            
+
         param_obj = self.env['ir.config_parameter'].sudo()
         if not force_refresh:
-            cached_key = param_obj.get_param('pos_seerbit.seerbit_encrypted_key')
+            cached_key = param_obj.get_param(self._encrypted_key_param)
             if cached_key:
                 self._encrypted_key = cached_key
                 return cached_key
 
         if not self.secret_key or not self.public_key:
-             raise UserError("Seerbit keys are missing. Please configure them in Settings.")
+             raise UserError(
+                 "Seerbit keys are missing for %s. Configure them in Settings → Seerbit for that company."
+                 % self.company.name
+             )
 
         url = 'https://seerbitapi.com/api/v2/encrypt/keys'
         payload = {
@@ -45,13 +54,13 @@ class SeerbitAPI:
                 data = res_data['data']
                 if 'EncryptedSecKey' in data and 'encryptedKey' in data['EncryptedSecKey']:
                     self._encrypted_key = data['EncryptedSecKey']['encryptedKey']
-                    param_obj.set_param('pos_seerbit.seerbit_encrypted_key', self._encrypted_key)
+                    param_obj.set_param(self._encrypted_key_param, self._encrypted_key)
                     return self._encrypted_key
             raise UserError("Failed to parse encrypted key from Seerbit response")
         except Exception as e:
             _logger.error(f"Seerbit Encrypt Key Error: {e}")
             if not force_refresh:
-                cached_key = param_obj.get_param('pos_seerbit.seerbit_encrypted_key')
+                cached_key = param_obj.get_param(self._encrypted_key_param)
                 if cached_key:
                     self._encrypted_key = cached_key
                     return cached_key
@@ -131,7 +140,13 @@ class SeerbitAPI:
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
-                return res_data['data']
+                data = res_data['data']
+                payments = data.get('payments') if isinstance(data.get('payments'), dict) else {}
+                account_num = payments.get('accountNumber') or data.get('accountNumber')
+                if not account_num:
+                    err_msg = data.get('message') or res_data.get('message') or "Failed to reserve virtual account from SeerBit."
+                    raise UserError(f"Seerbit Error: {err_msg}")
+                return data
             raise UserError(f"Seerbit Error: {res_data.get('message', 'Unknown Error')}")
         except UserError:
             raise
@@ -163,6 +178,56 @@ class SeerbitAPI:
         except Exception as e:
             _logger.error(f"Seerbit Get VA Payments Error: {e}")
             raise UserError(f"Failed to fetch VA payments: {str(e)}")
+
+    def create_dynamic_virtual_account(self, reference, amount, customer_name, customer_email, expiry_minutes=30, currency="NGN", country="NG"):
+        """
+        Creates a dynamic bank transfer virtual account for an order/checkout transaction
+        using SeerBit's Checkout Transfer API (POST /api/v2/payments/initiates).
+        """
+        url = 'https://seerbitapi.com/api/v2/payments/initiates'
+        payload = {
+            "publicKey": self.public_key,
+            "amount": str(round(float(amount), 2)),
+            "fullName": customer_name or "POS Customer",
+            "email": customer_email or "pos@seerbit.com",
+            "paymentReference": reference,
+            "currency": currency,
+            "country": country,
+            "paymentType": "TRANSFER",
+        }
+        try:
+            response = self._do_request('POST', url, json=payload)
+            _logger.info("Seerbit HTTPS Response [POST %s]: Status %s - Body: %s", url, response.status_code, response.text)
+            response.raise_for_status()
+            res_data = response.json()
+            if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
+                data = res_data['data']
+                payments = data.get('payments') if isinstance(data.get('payments'), dict) else {}
+                account_num = payments.get('accountNumber') or data.get('accountNumber')
+                if not account_num:
+                    err_msg = data.get('message') or res_data.get('message') or "Failed to reserve virtual account from SeerBit."
+                    raise UserError(f"Seerbit Error: {err_msg}")
+                return data
+            raise UserError(f"Seerbit Error: {res_data.get('message', 'Unknown Error')}")
+        except UserError:
+            raise
+        except Exception as e:
+            _logger.error("Seerbit Create Dynamic VA Error: %s", e)
+            raise UserError(f"Failed to create Dynamic Virtual Account: {str(e)}")
+
+    def fetch_merchant_static_virtual_accounts(self):
+        url = f'https://seerbitapi.com/api/v2/virtual-accounts/list/{self.public_key}'
+        try:
+            response = self._do_request('GET', url)
+            _logger.info("Seerbit HTTPS Response [GET %s]: Status %s - Body: %s", url, response.status_code, response.text)
+            response.raise_for_status()
+            res_data = response.json()
+            if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
+                return res_data['data']
+            return []
+        except Exception as e:
+            _logger.error("Seerbit Fetch Merchant VAs Error: %s", e)
+            raise UserError(f"Failed to fetch merchant Virtual Accounts: {str(e)}")
 
     # Invoicing
     def create_invoice(self, order_no, due_date, currency, receivers_name, customer_email, invoice_items):
