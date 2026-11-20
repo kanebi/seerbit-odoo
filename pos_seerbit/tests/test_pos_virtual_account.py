@@ -225,6 +225,7 @@ class TestPosVirtualAccount(SeerbitCommon):
                     'payer_name': tx.payer_name,
                     'order_id': order.id,
                     'order_ref': order.pos_reference or order.name,
+                    'account_number': tx.account_number,
                 }
             )
 

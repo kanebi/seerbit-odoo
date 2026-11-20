@@ -96,7 +96,7 @@ class TestSeerbitVirtualAccount(SeerbitCommon):
                 companies_seen.append(company.id if company else None)
                 self.company = company
 
-            def get_virtual_account_payments(self, account_number):
+            def get_virtual_account_payments(self, account_number, **kwargs):
                 return []
 
         with patch(
