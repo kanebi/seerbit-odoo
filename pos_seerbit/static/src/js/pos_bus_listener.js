@@ -63,18 +63,16 @@ export const posSeerbitBusService = {
                         const payerToDisplay = data.payer_name || 'N/A';
                         if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
                             const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
-                            if (line.set_receipt_info) {
-                                line.set_receipt_info(receiptText);
-                            } else if (line.setReceiptInfo) {
+                            if (line.setReceiptInfo) {
                                 line.setReceiptInfo(receiptText);
                             } else {
                                 line.ticket = (line.ticket || '') + receiptText;
                             }
                         }
-                        if (line.set_payment_status) {
-                            line.set_payment_status("done");
-                        } else if (line.setPaymentStatus) {
+                        if (line.setPaymentStatus) {
                             line.setPaymentStatus("done");
+                        } else if (line.set_payment_status) {
+                            line.set_payment_status("done");
                         }
                         notification.add(
                             _t("Payment of %s automatically matched from %s!", data.amount, data.payer_name),
@@ -101,8 +99,14 @@ export const posSeerbitBusService = {
                     _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference);
                 notification.add(msg, { type: "info" });
 
-                // Transferred payments are matched manually by cashier in the payments dialog
-                if (data.is_transferred) {
+                // Transferred payments or payments with duplicate amounts MUST be manually matched
+                if (data.is_transferred || data.has_multiple_same_amount || data.requires_manual_match) {
+                    if (data.has_multiple_same_amount) {
+                        notification.add(
+                            _t("Multiple payments of %s received on this Virtual Account. Manual selection required.", data.amount),
+                            { type: "warning" }
+                        );
+                    }
                     const activeModal = pos._active_seerbit_modal;
                     if (activeModal && typeof activeModal.fetchPayments === "function") {
                         activeModal.fetchPayments();
@@ -111,6 +115,23 @@ export const posSeerbitBusService = {
                 }
 
                 if (currentOrder) {
+                    const activeModal = pos._active_seerbit_modal;
+                    // Ambiguity safety: check if modal payments list has multiple payments of this amount
+                    if (activeModal?.state?.payments) {
+                        const sameAmtPayments = activeModal.state.payments.filter(
+                            (p) => p.matching_status === "unmatched" && Math.abs(parseFloat(p.amount) - parseFloat(data.amount || 0)) < 0.01
+                        );
+                        if (sameAmtPayments.length > 1 || (sameAmtPayments.length === 1 && sameAmtPayments[0].id !== data.transaction_id && sameAmtPayments[0].reference !== data.reference)) {
+                            notification.add(
+                                _t("Multiple payments of %s found on till. Manual selection required.", data.amount),
+                                { type: "warning" }
+                            );
+                            if (typeof activeModal.fetchPayments === "function") {
+                                activeModal.fetchPayments();
+                            }
+                            return;
+                        }
+                    }
                     const paymentLines = currentOrder.get_paymentlines ? currentOrder.get_paymentlines() : (currentOrder.payment_ids || []);
                     const line = paymentLines.find((l) => {
                         if (l.payment_method_id?.payment_method_type !== "transfer" || l.seerbit_is_matched) {
@@ -139,18 +160,16 @@ export const posSeerbitBusService = {
                         const payerToDisplay = data.payer_name || 'N/A';
                         if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
                             const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
-                            if (line.set_receipt_info) {
-                                line.set_receipt_info(receiptText);
-                            } else if (line.setReceiptInfo) {
+                            if (line.setReceiptInfo) {
                                 line.setReceiptInfo(receiptText);
                             } else {
                                 line.ticket = (line.ticket || '') + receiptText;
                             }
                         }
-                        if (line.set_payment_status) {
-                            line.set_payment_status("done");
-                        } else if (line.setPaymentStatus) {
+                        if (line.setPaymentStatus) {
                             line.setPaymentStatus("done");
+                        } else if (line.set_payment_status) {
+                            line.set_payment_status("done");
                         }
                         notification.add(
                             _t("Payment of %s automatically matched from %s!", data.amount, data.payer_name),

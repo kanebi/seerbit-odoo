@@ -349,6 +349,7 @@
                                                         <td>
                                                             <span class="small fw-bold text-dark"><t t-esc="formatAmount(p.amount)"/></span>
                                                             <span t-if="isExactAmount(p.amount) and p.matching_status !== 'transferred'" class="badge bg-success ms-1 small fw-bold">Exact Match</span>
+                                                            <span t-if="p.has_duplicate_amount and p.matching_status !== 'transferred'" class="badge text-bg-warning ms-1 small fw-bold" title="Multiple payments of same amount - manual match required">Duplicate Amount</span>
                                                         </td>
                                                         <td class="font-monospace small text-secondary"><t t-esc="p.reference"/></td>
                                                         <td>

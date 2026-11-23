@@ -166,6 +166,107 @@ class TestPosVirtualAccount(SeerbitCommon):
                 }
             )
 
+    def test_auto_match_refuses_duplicate_same_amount_payments(self):
+        """
+        Verify that if multiple payments of the identical amount arrive or are spooled,
+        auto-match is aborted and cashiers must manually match the payment.
+        """
+        va = self.env['seerbit.virtual.account'].create({
+            'name': 'POS Dup Test VA',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_static',
+            'account_number': '7778889999',
+            'reference': 'VA_DUP_TEST',
+        })
+        pm = self.env['pos.payment.method'].create({
+            'name': 'SeerBit Bank Transfer Dup',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+            'seerbit_va_id': va.id,
+            'journal_id': self.journal_a.id,
+        })
+        pos_config = self.env['pos.config'].create({
+            'name': 'POS Config Dup',
+            'company_id': self.company_a.id,
+            'payment_method_ids': [(4, pm.id)],
+        })
+        session = self.env['pos.session'].create({
+            'config_id': pos_config.id,
+            'user_id': self.env.uid,
+        })
+        session.write({'state': 'opened'})
+
+        # ONE draft order for 30000.0
+        order = self.env['pos.order'].create({
+            'session_id': session.id,
+            'company_id': self.company_a.id,
+            'date_order': fields.Datetime.now(),
+            'pos_reference': 'Order Dup 1',
+            'amount_total': 30000.0,
+            'amount_tax': 0.0,
+            'amount_paid': 0.0,
+            'amount_return': 0.0,
+            'state': 'draft',
+        })
+
+        # 1. First transaction of 30000 arrives via webhook/spooling
+        tx1 = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_DUP_001',
+            'va_id': va.id,
+            'reference': 'REF_DUP_001',
+            'amount': 30000.0,
+            'payer_name': 'First Customer',
+            'matching_status': 'unmatched',
+            'status': 'successful',
+        })
+
+        # 2. Second transaction of 30000 arrives via register_inbound_transaction
+        with patch.object(type(session), '_broadcast_seerbit_va_event') as mock_broadcast:
+            tx2 = self.env['seerbit.va.transaction'].register_inbound_transaction(
+                va=va,
+                reference='REF_DUP_002',
+                amount=30000.0,
+                payer_name='Second Customer',
+            )
+            # Since TX1 is already unmatched with 30000.0, auto-match must refuse for TX2!
+            self.assertEqual(tx2.matching_status, 'unmatched')
+            self.assertFalse(tx2.pos_order_id)
+            mock_broadcast.assert_called_with(
+                event_type='seerbit_va_payment_received',
+                data={
+                    'transaction_id': tx2.id,
+                    'reference': tx2.reference,
+                    'amount': tx2.amount,
+                    'payer_name': tx2.payer_name,
+                    'account_number': tx2.account_number,
+                    'payment_date': fields.Datetime.to_string(tx2.payment_date),
+                    'has_multiple_same_amount': True,
+                    'requires_manual_match': True,
+                }
+            )
+
+        # 3. Verify get_unmatched_payments_for_pos marks both with has_duplicate_amount = True
+        payments = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va.id)
+        self.assertEqual(len(payments), 2)
+        for p in payments:
+            self.assertTrue(p['has_duplicate_amount'])
+
+        # 4. Cashier manually selects one of the duplicate payments
+        res = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            tx1.id,
+            order.pos_reference
+        )
+        self.assertTrue(res['success'])
+        self.assertEqual(tx1.matching_status, 'manual_matched')
+        self.assertEqual(tx1.pos_order_ref, order.pos_reference)
+
+        # Now only TX2 is unmatched, so has_duplicate_amount becomes False
+        payments_after = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va.id)
+        unmatched_after = [p for p in payments_after if p['matching_status'] == 'unmatched']
+        self.assertEqual(len(unmatched_after), 1)
+        self.assertFalse(unmatched_after[0]['has_duplicate_amount'])
+
     def test_auto_match_single_candidate_succeeds(self):
         va = self.env['seerbit.virtual.account'].create({
             'name': 'POS Auto VA 2',

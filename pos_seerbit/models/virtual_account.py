@@ -149,6 +149,17 @@ class SeerbitVirtualAccount(models.Model):
             try:
                 payload = api_client.get_virtual_account_payments(self.account_number, timeout=5)
                 Transaction = self.env['seerbit.va.transaction']
+                from collections import Counter
+                # Count successful payments by amount in the incoming batch to identify duplicates
+                batch_amounts = Counter()
+                for p in (payload or []):
+                    if p.get('gatewayCode') == '00':
+                        try:
+                            amt = round(float(p.get('amount') or 0.0), 2)
+                            batch_amounts[amt] += 1
+                        except (ValueError, TypeError):
+                            pass
+
                 for p in payload:
                     if p.get('gatewayCode') != '00':
                         continue
@@ -170,13 +181,17 @@ class SeerbitVirtualAccount(models.Model):
                         except Exception:
                             payment_date = None
 
+                    amt_key = round(amount, 2)
+                    has_duplicate_in_batch = batch_amounts[amt_key] > 1
+
                     Transaction.register_inbound_transaction(
                         va=self,
                         reference=ref,
                         amount=amount,
                         payer_name=payer,
                         raw_payload=p,
-                        payment_date=payment_date
+                        payment_date=payment_date,
+                        skip_auto_match=has_duplicate_in_batch
                     )
             except Exception as e:
                 _logger.error(f"Error fetching POS VA payments: {e}")

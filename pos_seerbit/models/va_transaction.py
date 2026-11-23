@@ -151,10 +151,10 @@ class SeerbitVaTransaction(models.Model):
         return super().create(vals_list)
 
     @api.model
-    def register_inbound_transaction(self, va, reference, amount, payer_name, raw_payload=None, payment_date=None):
+    def register_inbound_transaction(self, va, reference, amount, payer_name, raw_payload=None, payment_date=None, skip_auto_match=False):
         """
         Idempotent creation or retrieval of inbound VA transaction.
-        Triggers POS auto-matching engine if va_type is pos_static or pos_dynamic.
+        Triggers POS auto-matching engine if va_type is pos_static or pos_dynamic and skip_auto_match is False.
         """
         existing = self.search([('reference', '=', reference)], limit=1)
         if existing:
@@ -168,8 +168,10 @@ class SeerbitVaTransaction(models.Model):
                 ], limit=1)
                 if payment and payment.pos_order_id:
                     self._match_transaction_to_payment(existing, payment, payer_name, amount)
-                else:
+                elif not skip_auto_match:
                     self.env['pos.order']._attempt_va_auto_match(existing)
+                else:
+                    self._broadcast_unmatched_received(existing, has_multiple_same_amount=True)
             return existing
 
         vals = {
@@ -200,8 +202,10 @@ class SeerbitVaTransaction(models.Model):
                     ], limit=1)
                     if payment and payment.pos_order_id:
                         self._match_transaction_to_payment(existing, payment, payer_name, amount)
-                    else:
+                    elif not skip_auto_match:
                         self.env['pos.order']._attempt_va_auto_match(existing)
+                    else:
+                        self._broadcast_unmatched_received(existing, has_multiple_same_amount=True)
                 return existing
             raise
 
@@ -214,11 +218,49 @@ class SeerbitVaTransaction(models.Model):
             ], limit=1)
             if payment and payment.pos_order_id:
                 self._match_transaction_to_payment(transaction, payment, payer_name, amount)
-            else:
+            elif not skip_auto_match:
                 # Attempt auto-match against open orders
                 self.env['pos.order']._attempt_va_auto_match(transaction)
+            else:
+                self._broadcast_unmatched_received(transaction, has_multiple_same_amount=True)
 
         return transaction
+
+    @api.model
+    def _broadcast_unmatched_received(self, transaction, has_multiple_same_amount=False):
+        va = transaction.va_id
+        company = va.company_id
+        if va.va_type == 'pos_static':
+            payment_methods = self.env['pos.payment.method'].search([
+                ('company_id', '=', company.id),
+                ('payment_method_type', '=', 'transfer'),
+                ('seerbit_va_id', '=', va.id),
+            ])
+        else:
+            payment_methods = self.env['pos.payment.method'].search([
+                ('company_id', '=', company.id),
+                ('payment_method_type', '=', 'transfer'),
+                ('seerbit_transfer_type', '=', 'dynamic'),
+            ])
+        open_sessions = self.env['pos.session'].search([
+            ('company_id', '=', company.id),
+            ('state', '=', 'opened'),
+            ('config_id.payment_method_ids', 'in', payment_methods.ids),
+        ])
+        for session in open_sessions:
+            session._broadcast_seerbit_va_event(
+                event_type='seerbit_va_payment_received',
+                data={
+                    'transaction_id': transaction.id,
+                    'reference': transaction.reference,
+                    'amount': transaction.amount,
+                    'payer_name': transaction.payer_name,
+                    'account_number': transaction.account_number,
+                    'payment_date': fields.Datetime.to_string(transaction.payment_date),
+                    'has_multiple_same_amount': has_multiple_same_amount,
+                    'requires_manual_match': has_multiple_same_amount,
+                }
+            )
 
     @api.model
     def _match_transaction_to_payment(self, transaction, payment, payer_name=None, amount=None):
@@ -306,6 +348,12 @@ class SeerbitVaTransaction(models.Model):
             limit=limit,
             order='payment_date desc'
         )
+        from collections import Counter
+        unmatched_amounts = Counter(
+            round(float(r.get('amount') or 0.0), 2)
+            for r in records
+            if r.get('matching_status') == 'unmatched'
+        )
         for rec in records:
             if isinstance(rec.get('payment_date'), (datetime.datetime, datetime.date)):
                 rec['payment_date'] = fields.Datetime.to_string(rec['payment_date'])
@@ -313,6 +361,8 @@ class SeerbitVaTransaction(models.Model):
                 rec['transferred_to_config_name'] = rec['transferred_to_config_id'][1]
             else:
                 rec['transferred_to_config_name'] = False
+            amt = round(float(rec.get('amount') or 0.0), 2)
+            rec['has_duplicate_amount'] = (unmatched_amounts[amt] > 1) if rec.get('matching_status') == 'unmatched' else False
         return records
 
     @api.model
