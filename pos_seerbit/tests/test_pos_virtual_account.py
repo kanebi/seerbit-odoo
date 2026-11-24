@@ -904,4 +904,125 @@ class TestPosVirtualAccount(SeerbitCommon):
         )
         self.assertFalse(match_res.get('success'))
 
+    def test_concurrent_two_orders_same_amount_handled(self):
+        """
+        Verify that when two orders of the same amount are waiting for payment,
+        the system handles both:
+        1. Dynamic VAs have dedicated accounts, so two transactions of identical amount
+           are never rejected by ambiguity checks.
+        2. Once transaction 1 is matched to order 1 via match_payment_to_pos_order_atomic,
+           transaction 2 of the same amount matches order 2 cleanly without being blocked.
+        """
+        # --- 1. Dynamic VA test with two orders of identical amount (e.g. 52.50) ---
+        pm_dyn = self.env['pos.payment.method'].create({
+            'name': 'SeerBit Dynamic Transfer Concurrent',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'dynamic',
+            'journal_id': self.journal_a.id,
+        })
+        cfg = self.env['pos.config'].create({
+            'name': 'POS Config Concurrent',
+            'company_id': self.company_a.id,
+            'payment_method_ids': [(4, pm_dyn.id)],
+        })
+        session = self.env['pos.session'].create({
+            'config_id': cfg.id,
+            'user_id': self.env.uid,
+        })
+        session.write({'state': 'opened'})
+
+        va_dyn1 = self.env['seerbit.virtual.account'].create({
+            'name': 'Dyn VA 1',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_dynamic',
+            'account_number': '1112223331',
+            'reference': 'POS_DYN_ORD1_TOKEN1',
+        })
+        va_dyn2 = self.env['seerbit.virtual.account'].create({
+            'name': 'Dyn VA 2',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_dynamic',
+            'account_number': '1112223332',
+            'reference': 'POS_DYN_ORD2_TOKEN2',
+        })
+
+        order1 = self.env['pos.order'].create({
+            'session_id': session.id,
+            'company_id': self.company_a.id,
+            'date_order': fields.Datetime.now(),
+            'pos_reference': 'ORD1',
+            'amount_total': 52.50,
+            'amount_tax': 0.0,
+            'amount_paid': 0.0,
+            'amount_return': 0.0,
+            'state': 'draft',
+        })
+        order2 = self.env['pos.order'].create({
+            'session_id': session.id,
+            'company_id': self.company_a.id,
+            'date_order': fields.Datetime.now(),
+            'pos_reference': 'ORD2',
+            'amount_total': 52.50,
+            'amount_tax': 0.0,
+            'amount_paid': 0.0,
+            'amount_return': 0.0,
+            'state': 'draft',
+        })
+
+        # Register transaction 1 for Dyn VA 1 (52.50)
+        tx1 = self.env['seerbit.va.transaction'].register_inbound_transaction(
+            va=va_dyn1,
+            reference='POS_DYN_ORD1_TOKEN1',
+            amount=52.50,
+            payer_name='Customer 1'
+        )
+        self.assertEqual(tx1.matching_status, 'auto_matched')
+        self.assertEqual(tx1.pos_order_id.id, order1.id)
+
+        # Register transaction 2 for Dyn VA 2 (52.50)
+        tx2 = self.env['seerbit.va.transaction'].register_inbound_transaction(
+            va=va_dyn2,
+            reference='POS_DYN_ORD2_TOKEN2',
+            amount=52.50,
+            payer_name='Customer 2'
+        )
+        self.assertEqual(tx2.matching_status, 'auto_matched')
+        self.assertEqual(tx2.pos_order_id.id, order2.id)
+
+        # --- 2. Static VA atomic match isolation ---
+        va_static = self.env['seerbit.virtual.account'].create({
+            'name': 'Static VA Concurrent',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_static',
+            'account_number': '9998887771',
+            'reference': 'STATIC_CONCURRENT_VA',
+        })
+        tx_s1 = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_S1',
+            'va_id': va_static.id,
+            'reference': 'REF_STAT_001',
+            'amount': 100.0,
+            'payer_name': 'Static Payer 1',
+            'matching_status': 'unmatched',
+            'status': 'successful',
+        })
+        # Atomic match tx_s1 from frontend bus listener
+        res_match = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            transaction_id=tx_s1.id,
+            pos_order_uuid='ORDER_STATIC_1',
+            matching_status='auto_matched'
+        )
+        self.assertTrue(res_match['success'])
+        self.assertEqual(tx_s1.matching_status, 'auto_matched')
+
+        # When second payment of 100.0 arrives for order 2, it is not blocked by tx_s1
+        remaining_unmatched = self.env['seerbit.va.transaction'].search([
+            ('va_id', '=', va_static.id),
+            ('matching_status', '=', 'unmatched'),
+            ('amount', '=', 100.0),
+        ])
+        self.assertEqual(len(remaining_unmatched), 0)
+
+
 

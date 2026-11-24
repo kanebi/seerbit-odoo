@@ -322,7 +322,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             const res = await this.orm.call(
                 "seerbit.va.transaction",
                 "match_payment_to_pos_order_atomic",
-                [payment.id, orderUuid]
+                [payment.id, orderUuid, false, "manual_matched"]
             );
             if (res.success) {
                 this.props.onPaymentConfirmed(res);

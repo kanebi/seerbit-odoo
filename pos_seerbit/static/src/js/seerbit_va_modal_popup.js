@@ -118,7 +118,9 @@ export class SeerbitVaModalPopup extends Component {
                     const isExactAmt = Math.abs(parseFloat(lineAmt) - parseFloat(data.amount || 0)) < 0.01;
 
                     const isAutoMatchEligible = (type === "seerbit_va_payment_matched") ||
-                        (type === "seerbit_va_payment_received" && isForThisAccount && !data.has_multiple_same_amount && !data.requires_manual_match && (this.isDynamic || isExactAmt));
+                        (type === "seerbit_va_payment_received" && isForThisAccount && (
+                            this.isDynamic || (!data.has_multiple_same_amount && !data.requires_manual_match && isExactAmt)
+                        ));
 
                     if (isAutoMatchEligible) {
                         this.showSuccessAndClose(data);
@@ -587,7 +589,7 @@ export class SeerbitVaModalPopup extends Component {
             const res = await this.orm.call(
                 "seerbit.va.transaction",
                 "match_payment_to_pos_order_atomic",
-                [payment.id, orderUuid]
+                [payment.id, orderUuid, false, "manual_matched"]
             );
             if (res.success) {
                 this._onPaymentConfirmed(res);

@@ -74,33 +74,35 @@ class PosOrder(models.Model):
             return False
 
         # 3. Check for duplicate unmatched payments with same amount on this VA (Ambiguity Safety)
-        same_amount_unmatched = self.env['seerbit.va.transaction'].search([
-            ('va_id', '=', transaction.va_id.id),
-            ('matching_status', '=', 'unmatched'),
-            ('amount', '=', transaction.amount),
-            ('status', '=', 'successful'),
-        ])
-        if len(same_amount_unmatched) > 1:
-            _logger.info(
-                "Multiple unmatched transactions (%s) found with amount %s for VA %s. "
-                "Refusing auto-match to prevent wrong attribution; manual match required.",
-                len(same_amount_unmatched), transaction.amount, transaction.va_id.display_name
-            )
-            for session in open_sessions:
-                session._broadcast_seerbit_va_event(
-                    event_type='seerbit_va_payment_received',
-                    data={
-                        'transaction_id': transaction.id,
-                        'reference': transaction.reference,
-                        'amount': transaction.amount,
-                        'payer_name': transaction.payer_name,
-                        'account_number': transaction.account_number,
-                        'payment_date': fields.Datetime.to_string(transaction.payment_date),
-                        'has_multiple_same_amount': True,
-                        'requires_manual_match': True,
-                    }
+        # Only applies to static VAs where account is shared across orders. Dynamic VAs have dedicated accounts.
+        if transaction.va_id.va_type == 'pos_static':
+            same_amount_unmatched = self.env['seerbit.va.transaction'].search([
+                ('va_id', '=', transaction.va_id.id),
+                ('matching_status', '=', 'unmatched'),
+                ('amount', '=', transaction.amount),
+                ('status', '=', 'successful'),
+            ])
+            if len(same_amount_unmatched) > 1:
+                _logger.info(
+                    "Multiple unmatched transactions (%s) found with amount %s for VA %s. "
+                    "Refusing auto-match to prevent wrong attribution; manual match required.",
+                    len(same_amount_unmatched), transaction.amount, transaction.va_id.display_name
                 )
-            return False
+                for session in open_sessions:
+                    session._broadcast_seerbit_va_event(
+                        event_type='seerbit_va_payment_received',
+                        data={
+                            'transaction_id': transaction.id,
+                            'reference': transaction.reference,
+                            'amount': transaction.amount,
+                            'payer_name': transaction.payer_name,
+                            'account_number': transaction.account_number,
+                            'payment_date': fields.Datetime.to_string(transaction.payment_date),
+                            'has_multiple_same_amount': True,
+                            'requires_manual_match': True,
+                        }
+                    )
+                return False
 
         # 4. Query candidate POS orders in draft / awaiting payment state
         min_order_time = transaction.payment_date - datetime.timedelta(minutes=window_minutes)
@@ -117,11 +119,14 @@ class PosOrder(models.Model):
 
         # 4. Strict Unambiguity Check (Dynamic VAs match directly on order reference)
         if transaction.va_id.va_type == 'pos_dynamic':
+            matched = self.env['pos.order']
             for order in candidate_orders:
                 clean_ref = (order.pos_reference or order.name or '').replace(' ', '').replace('-', '_')
                 if clean_ref and clean_ref in transaction.reference:
-                    candidate_orders = order
+                    matched = order
                     break
+            if matched:
+                candidate_orders = matched
 
         if len(candidate_orders) == 1:
             matched_order = candidate_orders[0]
