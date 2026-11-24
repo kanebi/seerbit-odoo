@@ -44,6 +44,9 @@ export class SeerbitVaPaymentWidget extends Component {
                         expires_at: this.paymentLine.seerbit_dynamic_expires_at,
                     };
                     this._startCountdownTimer();
+                } else if (this.paymentLine?.seerbit_auto_generate && !this.paymentLine?.seerbit_amount_changed) {
+                    this.paymentLine.seerbit_auto_generate = false;
+                    this.generateDynamicVa();
                 }
             } else {
                 this._checkPendingPaymentsCount();
@@ -82,6 +85,8 @@ export class SeerbitVaPaymentWidget extends Component {
 
     onChangeAmount() {
         if (this.paymentLine) {
+            this.paymentLine.seerbit_amount_changed = true;
+            this.paymentLine.seerbit_auto_generate = false;
             if (typeof this.paymentLine.set_amount === "function") {
                 this.paymentLine.set_amount(0);
             } else if (typeof this.paymentLine.setAmount === "function") {
@@ -235,6 +240,9 @@ export class SeerbitVaPaymentWidget extends Component {
                 this.paymentLine.seerbit_dynamic_va_id = res.va_id;
                 this.paymentLine.seerbit_dynamic_reference = res.reference;
                 this.paymentLine.seerbit_dynamic_expires_at = expiresAt;
+                this.paymentLine.seerbit_dynamic_amount = amount;
+                this.paymentLine.seerbit_amount_changed = false;
+                this.paymentLine.seerbit_auto_generate = false;
             }
             this._startCountdownTimer();
         } catch (err) {
