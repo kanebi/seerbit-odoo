@@ -599,14 +599,14 @@ class TestPosVirtualAccount(SeerbitCommon):
             'status': 'SUCCESS',
             'data': {
                 'payments': {
-                    'walletName': 'Order POS_001',
+                    'walletName': self.company_a.name,
                     'bankName': 'Wema Bank',
                     'accountNumber': '8877665544',
                     'reference': 'POS_DYN_POS_001_1234',
                 }
             }
         }
-        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.create_dynamic_virtual_account', return_value=mock_dynamic_response['data']):
+        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.create_dynamic_virtual_account', return_value=mock_dynamic_response['data']) as mock_create:
             res = pm.create_dynamic_va_for_pos(
                 order_ref="POS_001",
                 amount=7500.0,
@@ -616,6 +616,8 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertEqual(res['account_number'], '8877665544')
             self.assertEqual(res['bank_name'], 'Wema Bank')
             self.assertEqual(res['amount'], 7500.0)
+            self.assertEqual(mock_create.call_args.kwargs['customer_name'], self.company_a.name[:50].strip())
+            self.assertIn("@", mock_create.call_args.kwargs['customer_email'])
 
             # Ensure the dynamic VA was saved in seerbit.virtual.account with va_type='pos_dynamic'
             va = self.env['seerbit.virtual.account'].browse(res['va_id'])
