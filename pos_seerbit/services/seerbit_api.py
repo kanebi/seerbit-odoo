@@ -138,7 +138,7 @@ class SeerbitAPI:
         }
         
         try:
-            response = self._do_request('POST', url, json=payload)
+            response = self._do_request('POST', url, json=payload, timeout=30)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -196,7 +196,7 @@ class SeerbitAPI:
             "paymentType": "TRANSFER",
         }
         try:
-            response = self._do_request('POST', url, json=payload)
+            response = self._do_request('POST', url, json=payload, timeout=30)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('status') == 'SUCCESS' and 'data' in res_data:
@@ -241,7 +241,7 @@ class SeerbitAPI:
         }
         
         try:
-            response = self._do_request('POST', url, json=payload)
+            response = self._do_request('POST', url, json=payload, timeout=30)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('code') == '00':
@@ -329,7 +329,7 @@ class SeerbitAPI:
         }
         
         try:
-            response = self._do_request('POST', url, json=payload)
+            response = self._do_request('POST', url, json=payload, timeout=30)
             response.raise_for_status()
             res_data = response.json()
             if res_data.get('data') and 'paymentLinks' in res_data['data']:
