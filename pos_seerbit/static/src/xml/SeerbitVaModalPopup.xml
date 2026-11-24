@@ -203,6 +203,16 @@
                                                 </div>
                                             </div>
 
+                                            <!-- Dynamic VA Bank Account Name Info Note -->
+                                            <div t-if="isDynamic and !state.isExpired" 
+                                                 class="d-flex align-items-center justify-content-between p-2 px-3 mb-3 rounded-3 shadow-sm"
+                                                 style="background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E40AF;">
+                                                <span class="small fw-semibold" style="font-size: 0.82rem; line-height: 1.35;">
+                                                    Account name displayed on the bank may not match the account name displayed here.
+                                                </span>
+                                                <i class="fa fa-info-circle fs-5 ms-2 flex-shrink-0" style="color: #2563EB;"/>
+                                            </div>
+
                                             <!-- Inside Card Action Buttons -->
                                             <div class="d-flex gap-2 align-items-center">
                                                 <button t-if="hasGeneratedDynamicVa" 
@@ -266,6 +276,15 @@
                                             <div class="small fw-bolder text-uppercase" style="font-size: 0.75rem; color: #64748B;">ACCOUNT NAME</div>
                                             <div class="small fw-bold text-truncate" style="color: #1E293B;" t-att-title="accountName">
                                                 <t t-esc="accountName"/>
+                                            </div>
+                                            <!-- Dynamic VA Bank Account Name Info Note (Squeezed View) -->
+                                            <div t-if="isDynamic and !state.isExpired" 
+                                                 class="d-flex align-items-center justify-content-between p-2 mt-2 rounded-3"
+                                                 style="background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF;">
+                                                <span class="fw-semibold" style="font-size: 0.72rem; line-height: 1.25;">
+                                                    Account name displayed on the bank may not match the account name displayed here.
+                                                </span>
+                                                <i class="fa fa-info-circle ms-1 flex-shrink-0" style="color: #2563EB; font-size: 0.85rem;"/>
                                             </div>
                                         </div>
 

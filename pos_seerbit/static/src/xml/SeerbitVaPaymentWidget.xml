@@ -93,6 +93,15 @@
                         <span class="small fw-bold text-truncate d-block" style="color: #1E293B;" t-att-title="accountName">
                             <t t-esc="accountName"/>
                         </span>
+                        <!-- Dynamic VA Bank Account Name Info Note -->
+                        <div t-if="isDynamic and !state.isExpired" 
+                             class="d-flex align-items-center justify-content-between p-2 mt-1 rounded-3"
+                             style="background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF;">
+                            <span class="fw-semibold" style="font-size: 0.7rem; line-height: 1.25;">
+                                Account name displayed on the bank may not match the account name displayed here.
+                            </span>
+                            <i class="fa fa-info-circle ms-1 flex-shrink-0" style="color: #2563EB; font-size: 0.85rem;"/>
+                        </div>
                     </div>
                 </div>
 
