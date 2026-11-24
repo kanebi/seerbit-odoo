@@ -103,9 +103,36 @@ export class SeerbitVaModalPopup extends Component {
                     const lineAmt = this.expectedAmount;
                     const isExactAmt = Math.abs(parseFloat(lineAmt) - parseFloat(data.amount || 0)) < 0.01;
 
-                    if (type === "seerbit_va_payment_matched" || (type === "seerbit_va_payment_received" && (this.isDynamic ? isForThisAccount : (isForThisAccount && isExactAmt)))) {
+                    const isAutoMatchEligible = (type === "seerbit_va_payment_matched") ||
+                        (type === "seerbit_va_payment_received" && isForThisAccount && !data.has_multiple_same_amount && !data.requires_manual_match && (this.isDynamic || isExactAmt));
+
+                    if (isAutoMatchEligible) {
                         this.showSuccessAndClose(data);
                     } else if (isForThisAccount) {
+                        // Real-time optimistic update of payments table so incoming payment shows immediately
+                        if (data && data.transaction_id) {
+                            const existingIdx = this.state.payments.findIndex(
+                                (p) => p.id === data.transaction_id || p.reference === data.reference
+                            );
+                            const paymentObj = {
+                                id: data.transaction_id,
+                                reference: data.reference,
+                                payer_name: data.payer_name || "Bank Customer",
+                                amount: data.amount,
+                                payment_date: data.payment_date || new Date().toISOString(),
+                                status: "successful",
+                                matching_status: "unmatched",
+                                has_duplicate_amount: Boolean(data.has_multiple_same_amount),
+                                is_transferred_in: Boolean(data.is_transferred),
+                                transferred_to_config_name: false,
+                            };
+                            if (existingIdx >= 0) {
+                                this.state.payments[existingIdx] = Object.assign({}, this.state.payments[existingIdx], paymentObj);
+                            } else {
+                                this.state.payments.unshift(paymentObj);
+                            }
+                            this.state.unmatchedCount = this.state.payments.length;
+                        }
                         this.fetchPayments();
                         this._checkPendingPaymentsCount();
                     }
@@ -420,20 +447,22 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     async _spoolQuietly() {
-        if (!this.vaId || this.state.isSuccess || this._isSpoolingQuietly) return;
+        if ((!this.vaId && !this.accountNumber) || this.state.isSuccess || this._isSpoolingQuietly) return;
         this._isSpoolingQuietly = true;
         try {
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Quiet sync timed out")), 6000)
-            );
-            await Promise.race([
-                this.orm.call(
-                    "seerbit.virtual.account",
-                    "action_refresh_balance",
-                    [[this.vaId]]
-                ),
-                timeoutPromise,
-            ]);
+            if (this.vaId) {
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Quiet sync timed out")), 6000)
+                );
+                await Promise.race([
+                    this.orm.call(
+                        "seerbit.virtual.account",
+                        "action_refresh_balance",
+                        [[this.vaId]]
+                    ),
+                    timeoutPromise,
+                ]);
+            }
         } catch (err) {
             console.debug("Quiet Seerbit background spool warning:", err);
         }
@@ -444,7 +473,7 @@ export class SeerbitVaModalPopup extends Component {
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30, this.accountNumber]
             );
             if (!this.state.isSuccess && this.state.showPaymentsList) {
                 this.state.payments = data || [];
@@ -462,7 +491,7 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     async fetchPayments() {
-        if (!this.vaId || this.state.isSuccess) return;
+        if ((!this.vaId && !this.accountNumber) || this.state.isSuccess) return;
         this.state.loadingPayments = true;
         try {
             const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
@@ -470,7 +499,7 @@ export class SeerbitVaModalPopup extends Component {
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30, this.accountNumber]
             );
             if (!this.state.isSuccess) {
                 this.state.payments = data || [];
@@ -488,23 +517,25 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     async syncLiveFromSeerbit() {
-        if (!this.vaId) return;
+        if (!this.vaId && !this.accountNumber) return;
         this.state.syncingPayments = true;
         // 1. Immediately fetch from local Odoo DB first (sub-50ms)
         // so webhook/cron received payments display immediately without waiting for SeerBit external API
         await this.fetchPayments();
         try {
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
-            );
-            await Promise.race([
-                this.orm.call(
-                    "seerbit.virtual.account",
-                    "action_refresh_balance",
-                    [[this.vaId]]
-                ),
-                timeoutPromise,
-            ]);
+            if (this.vaId) {
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
+                );
+                await Promise.race([
+                    this.orm.call(
+                        "seerbit.virtual.account",
+                        "action_refresh_balance",
+                        [[this.vaId]]
+                    ),
+                    timeoutPromise,
+                ]);
+            }
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {

@@ -50,10 +50,32 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                 this.unsubscribeBus = this.busService.subscribe("seerbit_va_notification", (payload) => {
                     const { type, data } = payload || {};
                     if (!data) return;
-                    if (type === "seerbit_va_payment_received" || type === "seerbit_va_payment_matched") {
-                        if (!data.account_number || data.account_number === this.props.accountNumber) {
-                            this.fetchPayments();
+                    const clean = (s) => String(s || "").trim();
+                    const isForThis = !data.account_number || clean(data.account_number) === clean(this.props.accountNumber);
+                    if ((type === "seerbit_va_payment_received" || type === "seerbit_va_payment_matched") && isForThis) {
+                        if (data && data.transaction_id) {
+                            const existingIdx = this.state.payments.findIndex(
+                                (p) => p.id === data.transaction_id || p.reference === data.reference
+                            );
+                            const paymentObj = {
+                                id: data.transaction_id,
+                                reference: data.reference,
+                                payer_name: data.payer_name || "Bank Customer",
+                                amount: data.amount,
+                                payment_date: data.payment_date || new Date().toISOString(),
+                                status: "successful",
+                                matching_status: "unmatched",
+                                has_duplicate_amount: Boolean(data.has_multiple_same_amount),
+                                is_transferred_in: Boolean(data.is_transferred),
+                                transferred_to_config_name: false,
+                            };
+                            if (existingIdx >= 0) {
+                                this.state.payments[existingIdx] = Object.assign({}, this.state.payments[existingIdx], paymentObj);
+                            } else {
+                                this.state.payments.unshift(paymentObj);
+                            }
                         }
+                        this.fetchPayments();
                     }
                 });
             }
@@ -103,13 +125,14 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     }
 
     async fetchPayments() {
+        if (!this.vaId && !this.props.accountNumber) return;
         this.state.loading = true;
         try {
             const orderCreatedAt = this.props.order?.date_order || this.props.order?.creation_date?.toISOString?.() || new Date().toISOString();
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30, this.props.accountNumber]
             );
             this.state.payments = data || [];
         } catch (err) {
@@ -193,7 +216,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30, this.props.accountNumber]
             );
             this.state.payments = data || [];
         } catch (err) {

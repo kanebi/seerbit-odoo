@@ -294,7 +294,7 @@ class SeerbitWebhookController(http.Controller):
             # ===========================================================
             elif account_number:
                 va = request.env['seerbit.virtual.account'].sudo().search(
-                    [('account_number', '=', account_number)], limit=1
+                    [('account_number', '=', account_number)], order='id desc', limit=1
                 )
                 if not va:
                     _logger.warning(

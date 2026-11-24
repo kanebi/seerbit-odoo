@@ -89,6 +89,45 @@ class TestPosVirtualAccount(SeerbitCommon):
         self.assertIn('REF_RPC_001', refs)
         self.assertNotIn('REF_RPC_002', refs)
 
+        # Also query using account_number fallback without va_id
+        results_by_acc = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(
+            va_id=False,
+            account_number='7778889999',
+            limit=10,
+        )
+        refs_acc = [r['reference'] for r in results_by_acc]
+        self.assertIn('REF_RPC_001', refs_acc)
+
+    def test_dynamic_va_overpayment_displays_in_unmatched(self):
+        dyn_va = self.env['seerbit.virtual.account'].create({
+            'name': 'Dynamic VA Overpay',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_dynamic',
+            'account_number': '1070655184',
+            'reference': 'POS_DYN_OVERPAY_1',
+        })
+        # Customer pays 25.0 into dynamic account for 21.50 order
+        tx = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_OVERPAY',
+            'va_id': dyn_va.id,
+            'reference': 'REF_OVERPAY_25',
+            'amount': 25.0,
+            'payer_name': 'APOLOSI COMFORT',
+            'status': 'successful',
+            'matching_status': 'unmatched',
+            'payment_date': fields.Datetime.now(),
+        })
+
+        # Query should return the 25.0 payment even if order_created_at is given
+        payments = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(
+            va_id=dyn_va.id,
+            order_created_at_str=fields.Datetime.to_string(fields.Datetime.now()),
+            account_number='1070655184',
+        )
+        refs = [p['reference'] for p in payments]
+        self.assertIn('REF_OVERPAY_25', refs)
+        self.assertEqual(payments[0]['amount'], 25.0)
+
     def test_auto_match_ambiguity_refuses_guess(self):
         # Setup payment method with transfer
         va = self.env['seerbit.virtual.account'].create({

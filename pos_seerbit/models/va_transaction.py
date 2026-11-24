@@ -298,10 +298,11 @@ class SeerbitVaTransaction(models.Model):
             )
 
     @api.model
-    def get_unmatched_payments_for_pos(self, va_id, order_created_at_str=None, limit=20):
+    def get_unmatched_payments_for_pos(self, va_id, order_created_at_str=None, limit=20, account_number=None):
         """
         RPC method called by POS Cashier to view available incoming payments.
         Lists unmatched payments for this virtual account.
+        Matches by va_id and/or account_number to prevent drops from duplicate VA records.
         """
         if isinstance(va_id, (list, tuple)):
             va_id = va_id[0] if va_id else False
@@ -314,29 +315,28 @@ class SeerbitVaTransaction(models.Model):
             va_id = False
 
         va = self.env['seerbit.virtual.account'].browse(va_id) if va_id else self.env['seerbit.virtual.account']
-        if not va.exists():
-            return []
+        if not va.exists() and account_number:
+            va = self.env['seerbit.virtual.account'].search(
+                [('account_number', '=', str(account_number).strip())], order='id desc', limit=1
+            )
+
+        acc_num = str(account_number or (va.account_number if va.exists() else '')).strip()
 
         domain = [
-            ('va_id', '=', va.id),
             ('status', '=', 'successful'),
             ('matching_status', 'in', ['unmatched', 'transferred']),
         ]
 
-        if va.va_type == 'pos_dynamic' and order_created_at_str:
-            try:
-                company = va.company_id
-                window_mins = company.seerbit_pos_va_match_window_minutes or 30
-                clean_str = order_created_at_str.replace('Z', '').split('.')[0]
-                if 'T' in clean_str:
-                    order_dt = datetime.datetime.fromisoformat(clean_str)
-                else:
-                    order_dt = fields.Datetime.from_string(clean_str)
-                buffer_dt = order_dt - datetime.timedelta(minutes=window_mins)
-                domain.append(('payment_date', '>=', fields.Datetime.to_string(buffer_dt)))
-            except Exception as e:
-                _logger.warning("Failed to parse order_created_at_str %s: %s", order_created_at_str, e)
-        elif va.va_type == 'pos_static':
+        if va.exists() and acc_num:
+            domain.extend(['|', ('va_id', '=', va.id), ('account_number', '=', acc_num)])
+        elif va.exists():
+            domain.append(('va_id', '=', va.id))
+        elif acc_num:
+            domain.append(('account_number', '=', acc_num))
+        else:
+            return []
+
+        if va.exists() and va.va_type == 'pos_static':
             # For static store virtual accounts, display all unmatched payments from recent days (last 7 days)
             # so legitimate transfers before or during checkout are immediately visible to the cashier
             cutoff_dt = fields.Datetime.now() - datetime.timedelta(days=7)
