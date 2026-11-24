@@ -195,9 +195,9 @@ export class SeerbitVaPaymentWidget extends Component {
 
     get accountName() {
         if (this.isDynamic) {
-            return this.state.dynamicVa?.account_name || this.paymentLine?.seerbit_dynamic_account_name || this.pos.config.name;
+            return this.state.dynamicVa?.account_name || this.paymentLine?.seerbit_dynamic_account_name || this.pos?.company?.name || this.pos.config.name;
         }
-        return this.paymentMethod?.seerbit_va_name || this.pos.config.name;
+        return this.paymentMethod?.seerbit_va_name || this.pos?.company?.name || this.pos.config.name;
     }
 
     async _initDynamicVa() {

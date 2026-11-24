@@ -408,20 +408,28 @@ class PosPaymentMethod(models.Model):
         partner = company.partner_id
 
         import uuid
+        import re
         token = uuid.uuid4().hex[:6]
         clean_order_ref = "".join(c for c in (order_ref or 'ORD') if c.isalnum() or c in ('-', '_'))
         reference = f"POS_DYN_{clean_order_ref}_{token}"
 
-        # SeerBit limits active reserved accounts per customer email (Error S12: "You cannot reserve more than 1 account(s) for a customer").
-        # If customer email is provided, append a tag to prevent collision on amount changes/retries.
-        # Otherwise, use an order-specific unique email.
+        # Dynamic accounts are created with company name as name (same as static).
+        name = (company.name or "Company")[:50].strip()
+
+        # Uniqueness is only with emails to prevent SeerBit S12 customer collisions
+        clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
         if customer_email and '@' in customer_email:
             local, domain = customer_email.split('@', 1)
-            email = f"{local}+{token}@{domain}"
+            clean_local = re.sub(r'[^a-zA-Z0-9._-]', '', local) or 'customer'
+            email = f"{clean_local}+{token.lower()}@{domain}"
         else:
-            email = f"order_{clean_order_ref}_{token}@seerbit.com"
-
-        name = customer_name or f"Order {order_ref}"
+            base_email = company.email or partner.email
+            if base_email and '@' in base_email:
+                email_user, email_domain = base_email.split('@', 1)
+                clean_user = re.sub(r'[^a-zA-Z0-9._-]', '', email_user) or clean_comp
+                email = f"{clean_user}+dyn_{clean_order_ref.lower()}_{token.lower()}@{email_domain}"
+            else:
+                email = f"{clean_comp}_dyn_{clean_order_ref.lower()}_{token.lower()}@pos.seerbit.com"
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
@@ -437,7 +445,7 @@ class PosPaymentMethod(models.Model):
         payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
         account_number = payments_data.get('accountNumber') or res.get('accountNumber')
         bank_name = payments_data.get('bankName') or res.get('bankName', 'SeerBit Bank')
-        wallet_name = payments_data.get('walletName') or res.get('walletName', name)
+        wallet_name = payments_data.get('walletName') or res.get('walletName') or name
         assigned_ref = payments_data.get('paymentReference') or payments_data.get('reference') or res.get('reference', reference)
 
         bank = self.env['res.bank'].search([('name', '=', bank_name)], limit=1)
