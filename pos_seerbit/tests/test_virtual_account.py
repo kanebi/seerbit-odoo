@@ -96,7 +96,7 @@ class TestSeerbitVirtualAccount(SeerbitCommon):
                 companies_seen.append(company.id if company else None)
                 self.company = company
 
-            def get_virtual_account_payments(self, account_number):
+            def get_virtual_account_payments(self, account_number, **kwargs):
                 return []
 
         with patch(
@@ -108,3 +108,106 @@ class TestSeerbitVirtualAccount(SeerbitCommon):
         self.assertIn(self.company_a.id, companies_seen)
         self.assertIn(self.company_b.id, companies_seen)
         self.assertTrue(va_a.exists() and va_b.exists())
+
+    def test_cron_skips_matched_dynamic_va(self):
+        va_dynamic_unmatched = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '5551110001',
+            'reference': 'VA_DYN_UNMATCHED',
+            'va_type': 'pos_dynamic',
+        })
+        va_dynamic_matched = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '5551110002',
+            'reference': 'VA_DYN_MATCHED',
+            'va_type': 'pos_dynamic',
+        })
+        self.env['seerbit.va.transaction'].create({
+            'va_id': va_dynamic_matched.id,
+            'reference': 'TX_MATCHED_123',
+            'amount': 100.0,
+            'matching_status': 'auto_matched',
+            'pos_order_ref': 'POS/TEST/001',
+        })
+        accounts_spooled = []
+
+        class TrackingAPI:
+            def __init__(self, env, company=None):
+                self.company = company
+
+            def get_virtual_account_payments(self, account_number, timeout=5):
+                accounts_spooled.append(account_number)
+                return []
+
+        with patch(
+            'odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI',
+            TrackingAPI,
+        ):
+            self.env['seerbit.virtual.account']._cron_spool_seerbit_payments()
+
+        self.assertIn('5551110001', accounts_spooled)
+        self.assertNotIn('5551110002', accounts_spooled)
+
+    def test_action_refresh_balance_without_account_number(self):
+        va = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'reference': 'VA_NO_ACC',
+            'name': 'No Account VA',
+        })
+        # Should cleanly return False and not raise UserError
+        res = va.action_refresh_balance()
+        self.assertFalse(res)
+
+    def test_action_refresh_balance_static_and_dynamic(self):
+        static_va = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '1067073755',
+            'bank_name': 'Moniepoint MFB',
+            'reference': 'VA_STATIC_TEST',
+            'va_type': 'pos_static',
+        })
+        dynamic_va = self.env['seerbit.virtual.account'].create({
+            'partner_id': self.partner_a.id,
+            'company_id': self.company_a.id,
+            'account_number': '1067268340',
+            'bank_name': 'Moniepoint MFB',
+            'reference': 'POS_DYN_ORD_001',
+            'va_type': 'pos_dynamic',
+        })
+
+        sample_payments = [{
+            'gatewayCode': '00',
+            'paymentReference': 'REF_PAY_001',
+            'amount': 500.0,
+            'fullName': 'Alice Doe',
+        }]
+
+        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.get_virtual_account_payments', return_value=sample_payments):
+            # Test refresh on static
+            res_static = static_va.action_refresh_balance()
+            self.assertTrue(res_static)
+            tx_static = self.env['seerbit.va.transaction'].search([('reference', '=', 'REF_PAY_001')])
+            self.assertTrue(tx_static)
+            self.assertEqual(tx_static.amount, 500.0)
+            self.assertEqual(tx_static.payer_name, 'Alice Doe')
+
+            # Test refresh on dynamic
+            sample_payments[0]['paymentReference'] = 'REF_PAY_DYN_002'
+            res_dyn = dynamic_va.action_refresh_balance()
+            self.assertTrue(res_dyn)
+            tx_dyn = self.env['seerbit.va.transaction'].search([('reference', '=', 'REF_PAY_DYN_002')])
+            self.assertTrue(tx_dyn)
+            self.assertEqual(tx_dyn.amount, 500.0)
+
+    def test_action_virtual_account_default_filter_non_dynamic(self):
+        action = self.env.ref('pos_seerbit.action_seerbit_virtual_account')
+        self.assertTrue(action)
+        import ast
+        context = action.context or '{}'
+        if isinstance(context, str):
+            context = ast.literal_eval(context)
+        self.assertEqual(context.get('search_default_non_dynamic'), 1)

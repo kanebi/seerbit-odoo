@@ -64,15 +64,45 @@ class PosOrder(models.Model):
         if not payment_methods:
             return False
 
-        # 2. Query active POS sessions
+        # 2. Query active POS sessions configured with this payment method
         open_sessions = self.env['pos.session'].search([
             ('company_id', '=', company.id),
             ('state', '=', 'opened'),
+            ('config_id.payment_method_ids', 'in', payment_methods.ids),
         ])
         if not open_sessions:
             return False
 
-        # 3. Query candidate POS orders in draft / awaiting payment state
+        # 3. Check for duplicate unmatched payments with same amount on this VA (Ambiguity Safety)
+        same_amount_unmatched = self.env['seerbit.va.transaction'].search([
+            ('va_id', '=', transaction.va_id.id),
+            ('matching_status', '=', 'unmatched'),
+            ('amount', '=', transaction.amount),
+            ('status', '=', 'successful'),
+        ])
+        if len(same_amount_unmatched) > 1:
+            _logger.info(
+                "Multiple unmatched transactions (%s) found with amount %s for VA %s. "
+                "Refusing auto-match to prevent wrong attribution; manual match required.",
+                len(same_amount_unmatched), transaction.amount, transaction.va_id.display_name
+            )
+            for session in open_sessions:
+                session._broadcast_seerbit_va_event(
+                    event_type='seerbit_va_payment_received',
+                    data={
+                        'transaction_id': transaction.id,
+                        'reference': transaction.reference,
+                        'amount': transaction.amount,
+                        'payer_name': transaction.payer_name,
+                        'account_number': transaction.account_number,
+                        'payment_date': fields.Datetime.to_string(transaction.payment_date),
+                        'has_multiple_same_amount': True,
+                        'requires_manual_match': True,
+                    }
+                )
+            return False
+
+        # 4. Query candidate POS orders in draft / awaiting payment state
         min_order_time = transaction.payment_date - datetime.timedelta(minutes=window_minutes)
         order_domain = [
             ('session_id', 'in', open_sessions.ids),
@@ -115,6 +145,7 @@ class PosOrder(models.Model):
                     'payer_name': transaction.payer_name,
                     'order_id': matched_order.id,
                     'order_ref': matched_order.pos_reference or matched_order.name,
+                    'account_number': transaction.account_number,
                 }
             )
             return True

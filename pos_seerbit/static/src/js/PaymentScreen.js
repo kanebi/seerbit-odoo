@@ -28,7 +28,17 @@ patch(PaymentScreenPaymentLines.prototype, {
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
-            validateOrder: () => this.props.validateOrder?.(),
+            validateOrder: () => {
+                if (typeof this.pos?.validateOrder === "function") {
+                    return this.pos.validateOrder();
+                }
+                if (typeof this.pos?._active_payment_screen?.validateOrder === "function") {
+                    return this.pos._active_payment_screen.validateOrder();
+                }
+                if (typeof this.props.validateOrder === "function") {
+                    return this.props.validateOrder();
+                }
+            },
         }, {
             onClose: () => {
                 line._seerbit_modal_open = false;
@@ -74,7 +84,12 @@ patch(PosOrder.prototype, {
 patch(PaymentScreen.prototype, {
     setup() {
         super.setup(...arguments);
+        this.pos._active_payment_screen = this;
+        this.pos.validateOrder = (isForce = false) => this.validateOrder(isForce);
+
         onMounted(() => {
+            this.pos._active_payment_screen = this;
+            this.pos.validateOrder = (isForce = false) => this.validateOrder(isForce);
             const pendingPaymentLine = this.pos.getPendingPaymentLine("seerbit");
             if (pendingPaymentLine) {
                 pendingPaymentLine.setPaymentStatus("waitingSeerbit");
@@ -82,6 +97,12 @@ patch(PaymentScreen.prototype, {
         });
 
         onWillUnmount(() => {
+            if (this.pos._active_payment_screen === this) {
+                this.pos._active_payment_screen = null;
+            }
+            if (this.pos.validateOrder) {
+                delete this.pos.validateOrder;
+            }
             this.paymentLines.forEach((line) => {
                 if (line.payment_method_id.use_payment_terminal === "seerbit") {
                     line.payment_method_id.payment_terminal?.close?.();
@@ -139,14 +160,14 @@ patch(PaymentScreen.prototype, {
 
     async updateSelectedPaymentline(amount = false) {
         if (this.selectedPaymentLine?.payment_method_id?.payment_method_type === "transfer") {
-            const hasGeneratedVa = Boolean(this.selectedPaymentLine.seerbit_dynamic_account_number);
-            if (hasGeneratedVa && amount !== null && this.numberBuffer.get() !== null) {
-                this.notification.add(
-                    _t("Bank account already created for this amount. To change amount, remove this line and add it again."),
-                    { type: "warning" }
-                );
-                return;
-            }
+            // Reset cached dynamic account details so a new account for the updated amount can be generated cleanly
+            this.selectedPaymentLine.seerbit_dynamic_account_number = null;
+            this.selectedPaymentLine.seerbit_dynamic_bank_name = null;
+            this.selectedPaymentLine.seerbit_dynamic_account_name = null;
+            this.selectedPaymentLine.seerbit_dynamic_va_id = null;
+            this.selectedPaymentLine.seerbit_dynamic_reference = null;
+            this.selectedPaymentLine.seerbit_dynamic_expires_at = null;
+            this.selectedPaymentLine.seerbit_dynamic_amount = null;
         }
         return super.updateSelectedPaymentline(amount);
     },

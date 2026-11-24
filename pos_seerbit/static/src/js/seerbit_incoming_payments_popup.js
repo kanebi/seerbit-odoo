@@ -30,26 +30,59 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             syncing: false,
             searchQuery: "",
             selectedPayment: null,
+            showTransferModal: false,
+            transferPaymentTarget: null,
+            availableTills: [],
+            loadingTills: false,
+            selectedTargetTillId: null,
+            selectedTargetPmId: null,
+            transferringPayment: false,
         });
 
         this.unsubscribeBus = null;
+        this.quietSpoolerInterval = null;
+        this._isSpoolingQuietly = false;
 
         onMounted(() => {
             this.fetchPayments();
+            this._startQuietSpooler();
             if (this.busService) {
                 this.unsubscribeBus = this.busService.subscribe("seerbit_va_notification", (payload) => {
                     const { type, data } = payload || {};
                     if (!data) return;
-                    if (type === "seerbit_va_payment_received" || type === "seerbit_va_payment_matched") {
-                        if (!data.account_number || data.account_number === this.props.accountNumber) {
-                            this.fetchPayments();
+                    const clean = (s) => String(s || "").trim();
+                    const isForThis = !data.account_number || clean(data.account_number) === clean(this.props.accountNumber);
+                    if ((type === "seerbit_va_payment_received" || type === "seerbit_va_payment_matched") && isForThis) {
+                        if (data && data.transaction_id) {
+                            const existingIdx = this.state.payments.findIndex(
+                                (p) => p.id === data.transaction_id || p.reference === data.reference
+                            );
+                            const paymentObj = {
+                                id: data.transaction_id,
+                                reference: data.reference,
+                                payer_name: data.payer_name || "Bank Customer",
+                                amount: data.amount,
+                                payment_date: data.payment_date || new Date().toISOString(),
+                                status: "successful",
+                                matching_status: "unmatched",
+                                has_duplicate_amount: Boolean(data.has_multiple_same_amount),
+                                is_transferred_in: Boolean(data.is_transferred),
+                                transferred_to_config_name: false,
+                            };
+                            if (existingIdx >= 0) {
+                                this.state.payments[existingIdx] = Object.assign({}, this.state.payments[existingIdx], paymentObj);
+                            } else {
+                                this.state.payments.unshift(paymentObj);
+                            }
                         }
+                        this.fetchPayments();
                     }
                 });
             }
         });
 
         onWillUnmount(() => {
+            this._stopQuietSpooler();
             if (typeof this.unsubscribeBus === "function") {
                 this.unsubscribeBus();
             }
@@ -58,7 +91,8 @@ export class SeerbitIncomingPaymentsPopup extends Component {
 
     get vaId() {
         const v = this.props.vaId;
-        return Array.isArray(v) ? v[0] : (typeof v === "object" && v !== null ? v.id : v);
+        const id = Array.isArray(v) ? v[0] : (typeof v === "object" && v !== null ? v.id : v);
+        return id ? parseInt(id, 10) : null;
     }
 
     get filteredPayments() {
@@ -91,13 +125,14 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     }
 
     async fetchPayments() {
+        if (!this.vaId && !this.props.accountNumber) return;
         this.state.loading = true;
         try {
             const orderCreatedAt = this.props.order?.date_order || this.props.order?.creation_date?.toISOString?.() || new Date().toISOString();
             const data = await this.orm.call(
                 "seerbit.va.transaction",
                 "get_unmatched_payments_for_pos",
-                [this.vaId, orderCreatedAt, 30]
+                [this.vaId, orderCreatedAt, 30, this.props.accountNumber]
             );
             this.state.payments = data || [];
         } catch (err) {
@@ -114,18 +149,156 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     async syncLiveFromSeerbit() {
         if (!this.vaId) return;
         this.state.syncing = true;
+        // 1. Immediately fetch from local Odoo DB first (sub-50ms)
+        await this.fetchPayments();
         try {
-            await this.orm.call(
-                "seerbit.virtual.account",
-                "action_refresh_balance",
-                [[this.vaId]]
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
             );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
             await this.fetchPayments();
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {
-            this.notification.add(_t("Could not refresh: ") + (err.message || err), { type: "warning" });
+            console.warn("Live SeerBit refresh warning:", err);
+            await this.fetchPayments();
+            const errMsg = err?.data?.message || err?.message || String(err);
+            this.notification.add(_t("Could not refresh live from Seerbit: ") + errMsg, { type: "warning" });
         } finally {
             this.state.syncing = false;
+        }
+    }
+
+    _startQuietSpooler() {
+        this._stopQuietSpooler();
+        if (!this.vaId) return;
+
+        this._spoolQuietly();
+        this.quietSpoolerInterval = setInterval(() => {
+            this._spoolQuietly();
+        }, 5000);
+    }
+
+    _stopQuietSpooler() {
+        if (this.quietSpoolerInterval) {
+            clearInterval(this.quietSpoolerInterval);
+            this.quietSpoolerInterval = null;
+        }
+    }
+
+    async _spoolQuietly() {
+        if (!this.vaId || this._isSpoolingQuietly) return;
+        this._isSpoolingQuietly = true;
+        try {
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Quiet sync timed out")), 6000)
+            );
+            await Promise.race([
+                this.orm.call(
+                    "seerbit.virtual.account",
+                    "action_refresh_balance",
+                    [[this.vaId]]
+                ),
+                timeoutPromise,
+            ]);
+        } catch (err) {
+            console.debug("Quiet Seerbit background spool warning:", err);
+        }
+
+        try {
+            const orderCreatedAt = this.props.order?.date_order || this.props.order?.creation_date?.toISOString?.() || new Date().toISOString();
+            const data = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_unmatched_payments_for_pos",
+                [this.vaId, orderCreatedAt, 30, this.props.accountNumber]
+            );
+            this.state.payments = data || [];
+        } catch (err) {
+            console.debug("Quiet payments fetch warning:", err);
+        } finally {
+            this._isSpoolingQuietly = false;
+        }
+    }
+
+    async openTransferToTill(payment) {
+        this.state.transferPaymentTarget = payment;
+        this.state.showTransferModal = true;
+        this.state.loadingTills = true;
+        this.state.selectedTargetTillId = null;
+        this.state.selectedTargetPmId = null;
+        try {
+            const currentConfigId = this.env?.services?.pos?.config?.id;
+            const tills = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_available_tills_for_transfer",
+                [],
+                { current_config_id: currentConfigId }
+            );
+            this.state.availableTills = tills || [];
+            if (this.state.availableTills.length === 1) {
+                this.selectTargetTill(this.state.availableTills[0]);
+            }
+        } catch (err) {
+            console.error("Failed to load available tills:", err);
+            this.notification.add(_t("Failed to load available tills: ") + (err.message || err), { type: "danger" });
+        } finally {
+            this.state.loadingTills = false;
+        }
+    }
+
+    selectTargetTill(till) {
+        this.state.selectedTargetTillId = till.id;
+        if (till.payment_methods?.length === 1) {
+            this.state.selectedTargetPmId = till.payment_methods[0].id;
+        } else {
+            this.state.selectedTargetPmId = till.payment_methods?.[0]?.id || null;
+        }
+    }
+
+    closeTransferModal() {
+        this.state.showTransferModal = false;
+        this.state.transferPaymentTarget = null;
+        this.state.selectedTargetTillId = null;
+        this.state.selectedTargetPmId = null;
+    }
+
+    async confirmTransferToTill() {
+        const payment = this.state.transferPaymentTarget;
+        const targetConfigId = this.state.selectedTargetTillId;
+        const targetPmId = this.state.selectedTargetPmId;
+        if (!payment || !targetConfigId) {
+            this.notification.add(_t("Please select a destination till."), { type: "warning" });
+            return;
+        }
+
+        this.state.transferringPayment = true;
+        try {
+            const res = await this.orm.call(
+                "seerbit.va.transaction",
+                "transfer_payment_to_till",
+                [payment.id, targetConfigId, targetPmId]
+            );
+            if (res.success) {
+                this.notification.add(
+                    _t("Payment of %s successfully transferred to %s!", this.formatAmount(payment.amount), res.dest_till_name),
+                    { type: "success" }
+                );
+                this.closeTransferModal();
+                await this.fetchPayments();
+            } else {
+                this.notification.add(res.error || _t("Failed to transfer payment to till."), { type: "danger" });
+            }
+        } catch (err) {
+            console.error("Transfer error:", err);
+            this.notification.add(_t("Error transferring payment: ") + (err.message || err), { type: "danger" });
+        } finally {
+            this.state.transferringPayment = false;
         }
     }
 

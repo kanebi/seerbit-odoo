@@ -79,27 +79,69 @@ export const posSeerbitBusService = {
                             { type: "success" }
                         );
 
-                        // Trigger open modal if present so it transitions to success view and closes in 3s
+                        // Trigger open modal if present so it transitions to success view and auto-validates on completion
                         const activeModal = line._seerbit_modal || pos._active_seerbit_modal;
                         if (activeModal && typeof activeModal.showSuccessAndClose === "function") {
                             activeModal.showSuccessAndClose(data);
                             return;
                         }
 
-                        if (currentOrder.isPaid ? currentOrder.isPaid() : currentOrder.is_paid?.()) {
-                            if (pos.validateOrder) {
-                                pos.validateOrder();
-                            }
+                        const isPaid = currentOrder.isPaid ? currentOrder.isPaid() : (currentOrder.is_paid ? currentOrder.is_paid() : false);
+                        const due = currentOrder.get_due ? currentOrder.get_due() : (currentOrder.totalDue !== undefined ? currentOrder.totalDue : 0);
+                        if ((isPaid || due <= 0.01) && due <= 0.01) {
+                            setTimeout(async () => {
+                                try {
+                                    if (typeof pos.validateOrder === "function") {
+                                        await pos.validateOrder();
+                                    } else if (typeof pos._active_payment_screen?.validateOrder === "function") {
+                                        await pos._active_payment_screen.validateOrder();
+                                    }
+                                } catch (e) {
+                                    console.error("Error auto-validating order from bus listener:", e);
+                                }
+                            }, 100);
                         }
                     }
                 }
             } else if (type === "seerbit_va_payment_received") {
-                notification.add(
-                    _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference),
-                    { type: "info" }
-                );
+                const msg = data.is_transferred ?
+                    _t("Bank transfer of %s received (Transferred from %s, Ref: %s)", data.amount, data.from_till || "another till", data.reference) :
+                    _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference);
+                notification.add(msg, { type: "info" });
+
+                // Transferred payments or payments with duplicate amounts MUST be manually matched
+                if (data.is_transferred || data.has_multiple_same_amount || data.requires_manual_match) {
+                    if (data.has_multiple_same_amount) {
+                        notification.add(
+                            _t("Multiple payments of %s received on this Virtual Account. Manual selection required.", data.amount),
+                            { type: "warning" }
+                        );
+                    }
+                    const activeModal = pos._active_seerbit_modal;
+                    if (activeModal && typeof activeModal.fetchPayments === "function") {
+                        activeModal.fetchPayments();
+                    }
+                    return;
+                }
 
                 if (currentOrder) {
+                    const activeModal = pos._active_seerbit_modal;
+                    // Ambiguity safety: check if modal payments list has multiple payments of this amount
+                    if (activeModal?.state?.payments) {
+                        const sameAmtPayments = activeModal.state.payments.filter(
+                            (p) => p.matching_status === "unmatched" && Math.abs(parseFloat(p.amount) - parseFloat(data.amount || 0)) < 0.01
+                        );
+                        if (sameAmtPayments.length > 1 || (sameAmtPayments.length === 1 && sameAmtPayments[0].id !== data.transaction_id && sameAmtPayments[0].reference !== data.reference)) {
+                            notification.add(
+                                _t("Multiple payments of %s found on till. Manual selection required.", data.amount),
+                                { type: "warning" }
+                            );
+                            if (typeof activeModal.fetchPayments === "function") {
+                                activeModal.fetchPayments();
+                            }
+                            return;
+                        }
+                    }
                     const paymentLines = currentOrder.get_paymentlines ? currentOrder.get_paymentlines() : (currentOrder.payment_ids || []);
                     const line = paymentLines.find((l) => {
                         if (l.payment_method_id?.payment_method_type !== "transfer" || l.seerbit_is_matched) {
@@ -144,17 +186,27 @@ export const posSeerbitBusService = {
                             { type: "success" }
                         );
 
-                        // Trigger open modal if present so it transitions to success view and closes in 3s
+                        // Trigger open modal if present so it transitions to success view and auto-validates on completion
                         const activeModal = line._seerbit_modal || pos._active_seerbit_modal;
                         if (activeModal && typeof activeModal.showSuccessAndClose === "function") {
                             activeModal.showSuccessAndClose(data);
                             return;
                         }
 
-                        if (currentOrder.isPaid ? currentOrder.isPaid() : currentOrder.is_paid?.()) {
-                            if (pos.validateOrder) {
-                                pos.validateOrder();
-                            }
+                        const isPaid = currentOrder.isPaid ? currentOrder.isPaid() : (currentOrder.is_paid ? currentOrder.is_paid() : false);
+                        const due = currentOrder.get_due ? currentOrder.get_due() : (currentOrder.totalDue !== undefined ? currentOrder.totalDue : 0);
+                        if ((isPaid || due <= 0.01) && due <= 0.01) {
+                            setTimeout(async () => {
+                                try {
+                                    if (typeof pos.validateOrder === "function") {
+                                        await pos.validateOrder();
+                                    } else if (typeof pos._active_payment_screen?.validateOrder === "function") {
+                                        await pos._active_payment_screen.validateOrder();
+                                    }
+                                } catch (e) {
+                                    console.error("Error auto-validating order from bus listener:", e);
+                                }
+                            }, 100);
                         }
                     }
                 }

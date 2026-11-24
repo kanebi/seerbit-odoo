@@ -1,6 +1,7 @@
+import datetime
+import logging
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
-import logging
 
 from odoo.addons.pos_seerbit.bus_notify import send_seerbit_ui_notification
 
@@ -95,7 +96,29 @@ class SeerbitVirtualAccount(models.Model):
 
     @api.model
     def _cron_spool_seerbit_payments(self):
-        vas = self.search([('account_number', '!=', False)])
+        # Exclude dynamic VAs matched to an order
+        matched_dynamic_txs = self.env['seerbit.va.transaction'].search([
+            ('va_id.va_type', '=', 'pos_dynamic'),
+            '|', '|',
+            ('matching_status', 'in', ['auto_matched', 'manual_matched']),
+            ('pos_order_id', '!=', False),
+            ('pos_order_ref', '!=', False),
+        ])
+        excluded_dynamic_va_ids = set(matched_dynamic_txs.mapped('va_id').ids)
+
+        # Also exclude old dynamic VAs (> 2 hours) to avoid spooling expired temporary accounts
+        cutoff_dt = fields.Datetime.now() - datetime.timedelta(hours=2)
+        old_dynamic_vas = self.search([
+            ('va_type', '=', 'pos_dynamic'),
+            ('create_date', '<', cutoff_dt),
+        ])
+        excluded_dynamic_va_ids.update(old_dynamic_vas.ids)
+
+        domain = [('account_number', '!=', False)]
+        if excluded_dynamic_va_ids:
+            domain.append(('id', 'not in', list(excluded_dynamic_va_ids)))
+
+        vas = self.search(domain)
         if not vas:
             return
 
@@ -112,37 +135,63 @@ class SeerbitVirtualAccount(models.Model):
                 try:
                     va._fetch_and_process_payments(api_client)
                 except Exception as e:
-                    _logger.error(
-                        "Error spooling payments for VA %s (%s): %s",
+                    _logger.warning(
+                        "Seerbit spool warning for VA %s (%s): %s",
                         va.account_number, company.name, e,
-                    )
-                    send_seerbit_ui_notification(
-                        self.env,
-                        'Seerbit Sync Error',
-                        f'Failed to sync VA {va.name or va.account_number}: {str(e)}',
-                        record=va,
                     )
 
     def _fetch_and_process_payments(self, api_client):
         self.ensure_one()
+        if not self.account_number:
+            return
         if self.va_type in ('pos_static', 'pos_dynamic'):
             # POS Flow: Spool into seerbit.va.transaction
             try:
-                payload = api_client.get_virtual_account_payments(self.account_number)
+                payload = api_client.get_virtual_account_payments(self.account_number, timeout=5)
                 Transaction = self.env['seerbit.va.transaction']
+                from collections import Counter
+                # Count successful payments by amount in the incoming batch to identify duplicates
+                batch_amounts = Counter()
+                for p in (payload or []):
+                    if p.get('gatewayCode') == '00':
+                        try:
+                            amt = round(float(p.get('amount') or 0.0), 2)
+                            batch_amounts[amt] += 1
+                        except (ValueError, TypeError):
+                            pass
+
                 for p in payload:
                     if p.get('gatewayCode') != '00':
                         continue
                     ref = p.get('paymentReference') or p.get('reference') or p.get('transactionRef')
+                    if not ref:
+                        continue
                     amount = float(p.get('amount') or 0.0)
                     payer = p.get('fullName') or p.get('fullname') or p.get('originatorName') or p.get('customerName') or p.get('payerName') or 'Bank Customer'
+
+                    payment_date = None
+                    raw_dt = p.get('createdAt') or p.get('paymentDate') or p.get('date')
+                    if raw_dt:
+                        try:
+                            clean_dt = str(raw_dt).replace('Z', '').split('.')[0]
+                            if 'T' in clean_dt:
+                                payment_date = datetime.datetime.fromisoformat(clean_dt)
+                            else:
+                                payment_date = fields.Datetime.from_string(clean_dt)
+                        except Exception:
+                            payment_date = None
+
+                    amt_key = round(amount, 2)
+                    has_duplicate_in_batch = batch_amounts[amt_key] > 1
 
                     Transaction.register_inbound_transaction(
                         va=self,
                         reference=ref,
                         amount=amount,
                         payer_name=payer,
-                        raw_payload=p
+                        raw_payload=p,
+                        payment_date=payment_date,
+                        skip_auto_match=has_duplicate_in_batch
                     )
             except Exception as e:
                 _logger.error(f"Error fetching POS VA payments: {e}")
@@ -196,14 +245,17 @@ class SeerbitVirtualAccount(models.Model):
     def action_refresh_balance(self):
         self.ensure_one()
         if not self.account_number:
-            raise UserError(_("Virtual Account not fully configured."))
+            _logger.info("action_refresh_balance called on VA %s without account_number", self.id)
+            return False
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=self.company_id)
 
         try:
             self._fetch_and_process_payments(api_client)
+            return True
         except Exception as e:
+            _logger.warning("Error refreshing balance for VA %s: %s", self.id, e)
             raise UserError(_("Error refreshing balance: %s" % str(e)))
 
     def action_generate_va(self):
@@ -212,7 +264,7 @@ class SeerbitVirtualAccount(models.Model):
             raise UserError(_("Virtual Account is already generated."))
 
         partner = self.partner_id or self.company_id.partner_id or self.env.company.partner_id
-        if not partner.email:
+        if not partner.email and self.va_type != 'pos_static':
             raise UserError(_("An email address on '%s' is required to create a Virtual Account.") % partner.name)
 
         company = self.company_id or partner.company_id or self.env.company
@@ -222,19 +274,36 @@ class SeerbitVirtualAccount(models.Model):
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
         import uuid
+        import re
+
+        while True:
+            token = uuid.uuid4().hex[:6].upper()
+            if self.va_type == 'pos_static':
+                candidate_ref = f"POS_STATIC_{self.id or 'NEW'}_{token}"
+            else:
+                candidate_ref = f"VA_{partner.id}_{token}"
+            if not self.search_count([('reference', '=', candidate_ref)]):
+                reference = candidate_ref
+                break
 
         if self.va_type == 'pos_static':
-            reference = f"POS_STATIC_{self.id or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:4]}"
-            full_name = self.name or f"{company.name} - POS Static"
+            full_name = (self.name or f"{company.name} - POS Static")[:50]
+            base_email = partner.email or company.email
+            if base_email and '@' in base_email:
+                u, d = base_email.split('@', 1)
+                email = f"{u}+va{self.id or 'new'}_{token.lower()}@{d}"
+            else:
+                clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
+                email = f"{clean_comp}_va{self.id or 'new'}_{token.lower()}@pos.seerbit.com"
         else:
-            reference = f"VA_{partner.id}_{uuid.uuid4().hex[:8]}"
             full_name = partner.name
+            email = partner.email
 
         try:
             res = api_client.create_virtual_account(
                 full_name=full_name,
                 reference=reference,
-                email=partner.email
+                email=email
             )
             payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
 

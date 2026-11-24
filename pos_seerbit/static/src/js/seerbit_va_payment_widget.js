@@ -63,7 +63,7 @@ export class SeerbitVaPaymentWidget extends Component {
     }
 
     async generateDynamicVa() {
-        const amount = this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
+        const amount = this.paymentLine ? (this.paymentLine.get_amount ? this.paymentLine.get_amount() : (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0)) : 0;
         if (amount <= 1.0) {
             this.dialog.add(AlertDialog, {
                 title: _t("Amount Too Low"),
@@ -71,16 +71,26 @@ export class SeerbitVaPaymentWidget extends Component {
             });
             return;
         }
-        if (this.state.isExpired && this.paymentLine) {
-            this.paymentLine.seerbit_dynamic_account_number = null;
-            this.paymentLine.seerbit_dynamic_bank_name = null;
-            this.paymentLine.seerbit_dynamic_account_name = null;
-            this.paymentLine.seerbit_dynamic_va_id = null;
-            this.paymentLine.seerbit_dynamic_reference = null;
-            this.paymentLine.seerbit_dynamic_expires_at = null;
-            this.state.isExpired = false;
+        const previousAmount = this.paymentLine?.seerbit_dynamic_amount;
+        const amountChanged = previousAmount && Math.abs(parseFloat(previousAmount) - parseFloat(amount)) > 0.01;
+
+        if (this.state.isExpired || amountChanged || !this.paymentLine?.seerbit_dynamic_account_number) {
+            this.resetDynamicVa();
         }
         await this._initDynamicVa();
+    }
+
+    onChangeAmount() {
+        if (this.paymentLine) {
+            if (typeof this.paymentLine.set_amount === "function") {
+                this.paymentLine.set_amount(0);
+            } else if (typeof this.paymentLine.setAmount === "function") {
+                this.paymentLine.setAmount(0);
+            } else {
+                this.paymentLine.amount = 0;
+            }
+        }
+        this.resetDynamicVa();
     }
 
     resetDynamicVa() {
@@ -96,6 +106,7 @@ export class SeerbitVaPaymentWidget extends Component {
             this.paymentLine.seerbit_dynamic_va_id = null;
             this.paymentLine.seerbit_dynamic_reference = null;
             this.paymentLine.seerbit_dynamic_expires_at = null;
+            this.paymentLine.seerbit_dynamic_amount = null;
         }
     }
 
@@ -300,11 +311,25 @@ export class SeerbitVaPaymentWidget extends Component {
         );
 
         const order = this.pos.getOrder ? this.pos.getOrder() : this.pos.get_order();
-        if (order && (order.isPaid ? order.isPaid() : order.is_paid?.())) {
-            if (this.props.validateOrder) {
-                this.props.validateOrder();
-            } else if (this.pos.validateOrder) {
-                this.pos.validateOrder();
+        if (order) {
+            const isPaid = order.isPaid ? order.isPaid() : (order.is_paid ? order.is_paid() : false);
+            const due = order.get_due ? order.get_due() : (order.totalDue !== undefined ? order.totalDue : 0);
+            if ((isPaid || due <= 0.01) && due <= 0.01) {
+                const validateFn = this.props.validateOrder;
+                const posRef = this.pos;
+                setTimeout(async () => {
+                    try {
+                        if (typeof validateFn === "function") {
+                            await validateFn();
+                        } else if (typeof posRef?.validateOrder === "function") {
+                            await posRef.validateOrder();
+                        } else if (typeof posRef?._active_payment_screen?.validateOrder === "function") {
+                            await posRef._active_payment_screen.validateOrder();
+                        }
+                    } catch (e) {
+                        console.error("Error auto-validating order from widget:", e);
+                    }
+                }, 100);
             }
         }
     }

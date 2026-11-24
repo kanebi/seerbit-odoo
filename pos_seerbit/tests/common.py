@@ -19,6 +19,12 @@ class SeerbitCommon(TransactionCase):
             'currency_id': cls.company_a.currency_id.id,
         })
 
+        # Ensure company partner has email
+        if not cls.company_a.partner_id.email:
+            cls.company_a.partner_id.sudo().write({'email': 'company_a@example.com'})
+        if not cls.company_b.partner_id.email:
+            cls.company_b.partner_id.sudo().write({'email': 'company_b@example.com'})
+
         # Distinct keys per company (webhook uniqueness)
         cls.company_a.sudo().write({
             'seerbit_public_key': 'SB_PUB_TEST_A',

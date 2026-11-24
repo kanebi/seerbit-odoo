@@ -4,5 +4,6 @@ specs/
 # Ensure test files are tracked
 !tests/
 !tests/**
-tests/**/__pycache__/
+__pycache__/
 *.py[cod]
+*.pyc
