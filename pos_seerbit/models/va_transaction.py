@@ -489,12 +489,12 @@ class SeerbitVaTransaction(models.Model):
         }
 
     @api.model
-    def match_payment_to_pos_order_atomic(self, transaction_id, pos_order_uuid, cashier_user_id=None):
+    def match_payment_to_pos_order_atomic(self, transaction_id, pos_order_uuid, cashier_user_id=None, matching_status='manual_matched'):
         """
         Atomic matching with database row-level lock (SELECT ... FOR UPDATE).
         Prevents race conditions when two cashiers attempt to select the same payment simultaneously.
         """
-        self.flush_model(['matching_status', 'pos_order_ref', 'matched_by_user_id', 'matched_at'])
+        self.sudo().flush_model(['matching_status', 'pos_order_ref', 'matched_by_user_id', 'matched_at'])
         try:
             self.env.cr.execute(
                 "SELECT id, matching_status, amount, reference, payer_name "
@@ -512,8 +512,18 @@ class SeerbitVaTransaction(models.Model):
         if not row:
             return {'success': False, 'error': _("Transaction not found.")}
 
-        tx_id, matching_status, amount, reference, payer_name = row
-        if matching_status != 'unmatched':
+        tx_id, current_status, amount, reference, payer_name = row
+        if current_status != 'unmatched':
+            record = self.sudo().browse(tx_id)
+            if record.pos_order_ref == pos_order_uuid and current_status in ('auto_matched', 'manual_matched'):
+                return {
+                    'success': True,
+                    'transaction_id': tx_id,
+                    'reference': reference,
+                    'amount': amount,
+                    'payer_name': payer_name,
+                    'matched_at': fields.Datetime.to_string(record.matched_at or fields.Datetime.now()),
+                }
             return {
                 'success': False,
                 'error': _("This payment has already been matched to another order (Ref: %s).") % reference
@@ -521,9 +531,9 @@ class SeerbitVaTransaction(models.Model):
 
         now = fields.Datetime.now()
         user_id = cashier_user_id or self.env.uid
-        record = self.browse(tx_id)
+        record = self.sudo().browse(tx_id)
         record.write({
-            'matching_status': 'manual_matched',
+            'matching_status': matching_status,
             'pos_order_ref': pos_order_uuid,
             'matched_by_user_id': user_id,
             'matched_at': now,
