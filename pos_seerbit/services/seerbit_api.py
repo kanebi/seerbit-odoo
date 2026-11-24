@@ -183,7 +183,6 @@ class SeerbitAPI:
         """
         Creates a dynamic bank transfer virtual account for an order/checkout transaction
         using SeerBit's Checkout Transfer API (POST /api/v2/payments/initiates).
-        Falls back to direct virtual-accounts API if initiates endpoint rejects with validity/config errors.
         """
         url = 'https://seerbitapi.com/api/v2/payments/initiates'
         # SeerBit requires dynamic account validity range to be between 1 and 24 hours
@@ -202,7 +201,6 @@ class SeerbitAPI:
                 "validity": validity_hours,
             },
         }
-        err_msg = None
         try:
             response = self._do_request('POST', url, json=payload, timeout=30)
             response.raise_for_status()
@@ -214,40 +212,12 @@ class SeerbitAPI:
                 if account_num:
                     return data
             err_msg = res_data.get('message') or (res_data.get('data', {}).get('message') if isinstance(res_data.get('data'), dict) else "Failed to reserve virtual account from SeerBit.")
-            _logger.warning("SeerBit initiates dynamic VA returned status '%s': %s. Trying fallback...", res_data.get('status'), err_msg)
-        except Exception as e:
-            err_msg = str(e)
-            _logger.warning("SeerBit initiates dynamic VA exception: %s. Trying fallback...", err_msg)
-
-        # Fallback to direct virtual-accounts endpoint with amount
-        va_url = 'https://seerbitapi.com/api/v2/virtual-accounts'
-        va_payload = {
-            "publicKey": self.public_key,
-            "fullName": customer_name or "POS Customer",
-            "bankVerificationNumber": "",
-            "currency": currency,
-            "country": country,
-            "reference": reference,
-            "email": customer_email or "pos@seerbit.com",
-            "amount": str(round(float(amount), 2)),
-        }
-        try:
-            va_resp = self._do_request('POST', va_url, json=va_payload, timeout=30)
-            va_resp.raise_for_status()
-            va_res_data = va_resp.json()
-            if va_res_data.get('status') == 'SUCCESS' and 'data' in va_res_data:
-                va_data = va_res_data['data']
-                payments = va_data.get('payments') if isinstance(va_data.get('payments'), dict) else {}
-                account_num = payments.get('accountNumber') or va_data.get('accountNumber')
-                if account_num:
-                    return va_data
-            fallback_err = va_res_data.get('message', 'Unknown Error')
-            raise UserError(f"Seerbit Error: {err_msg or fallback_err}")
+            raise UserError(f"Seerbit Error: {err_msg}")
         except UserError:
             raise
         except Exception as e:
             _logger.error("Seerbit Create Dynamic VA Error: %s", e)
-            raise UserError(f"Seerbit Error: {err_msg or str(e)}")
+            raise UserError(f"Seerbit Error: {str(e)}")
 
     def fetch_merchant_static_virtual_accounts(self):
         url = f'https://seerbitapi.com/api/v2/virtual-accounts/list/{self.public_key}'
