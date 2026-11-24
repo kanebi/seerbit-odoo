@@ -20,7 +20,7 @@ patch(PaymentScreenPaymentLines.prototype, {
     toggleSeerbitAccordion(line) {
         line.seerbit_expanded = !line.seerbit_expanded;
     },
-    openSeerbitModal(line) {
+    openSeerbitModal(line, options = {}) {
         if (!line || line._seerbit_modal_open) {
             return;
         }
@@ -28,6 +28,7 @@ patch(PaymentScreenPaymentLines.prototype, {
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
+            autoGenerate: Boolean(options.autoGenerate),
             validateOrder: () => {
                 if (typeof this.pos?.validateOrder === "function") {
                     return this.pos.validateOrder();
@@ -115,7 +116,7 @@ patch(PaymentScreen.prototype, {
         });
     },
 
-    openSeerbitModal(line) {
+    openSeerbitModal(line, options = {}) {
         if (!line || line._seerbit_modal_open) {
             return;
         }
@@ -123,6 +124,7 @@ patch(PaymentScreen.prototype, {
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
+            autoGenerate: Boolean(options.autoGenerate),
             validateOrder: () => this.validateOrder(),
         }, {
             onClose: () => {
@@ -160,7 +162,11 @@ patch(PaymentScreen.prototype, {
                 selectedLine.seerbit_is_matched = false;
                 selectedLine.seerbit_expanded = false;
 
-                this.openSeerbitModal(selectedLine);
+                const isDynamic = paymentMethod?.seerbit_transfer_type === "dynamic";
+                selectedLine.seerbit_auto_generate = isDynamic;
+                selectedLine.seerbit_amount_changed = false;
+
+                this.openSeerbitModal(selectedLine, { autoGenerate: isDynamic });
             }
         }
         return res;
@@ -176,6 +182,8 @@ patch(PaymentScreen.prototype, {
             this.selectedPaymentLine.seerbit_dynamic_reference = null;
             this.selectedPaymentLine.seerbit_dynamic_expires_at = null;
             this.selectedPaymentLine.seerbit_dynamic_amount = null;
+            this.selectedPaymentLine.seerbit_amount_changed = true;
+            this.selectedPaymentLine.seerbit_auto_generate = false;
         }
         return super.updateSelectedPaymentline(amount);
     },

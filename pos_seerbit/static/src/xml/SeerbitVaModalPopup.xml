@@ -82,9 +82,13 @@
                             <div class="mb-3">
                                 <i class="fa fa-university fa-4x" style="color: #EB3E25;"/>
                             </div>
-                            <h3 class="fw-bolder text-dark mb-2">Generate Bank Account for this Order</h3>
+                            <h3 class="fw-bolder text-dark mb-2">
+                                <t t-if="state.generatingDynamicVa">Generating Bank Account...</t>
+                                <t t-else="">Generate Bank Account for this Order</t>
+                            </h3>
                             <p class="fs-6 mb-4" style="color: #4B5563 !important;">
-                                A unique virtual bank account will be created on SeerBit for this transaction.
+                                <t t-if="state.generatingDynamicVa">Please wait while we create a dedicated bank account for this transfer.</t>
+                                <t t-else="">A unique virtual bank account will be created on SeerBit for this transaction.</t>
                             </p>
 
                             <!-- Current Due Amount Box -->
