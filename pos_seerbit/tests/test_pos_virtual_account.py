@@ -393,6 +393,85 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertEqual(next_action.get('type'), 'ir.actions.client')
             self.assertEqual(next_action.get('tag'), 'reload')
 
+    def test_action_generate_static_va_without_company_email(self):
+        company_no_email = self.env['res.company'].create({
+            'name': 'Labule No Email Co',
+            'seerbit_public_key': 'KEY_TEST_NO_EMAIL',
+            'seerbit_secret_key': 'SEC_TEST_NO_EMAIL',
+        })
+        company_no_email.partner_id.write({'email': False})
+        company_no_email.write({'email': False})
+
+        pm = self.env['pos.payment.method'].create({
+            'name': 'Till Transfer 1',
+            'company_id': company_no_email.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+        })
+
+        mock_response = {
+            'code': 'S20',
+            'payments': {
+                'walletName': 'Till Transfer 1',
+                'accountNumber': '7788990011',
+                'bankName': 'Providus Bank',
+                'reference': 'POS_STATIC_NE_1',
+            }
+        }
+        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.create_virtual_account', return_value=mock_response) as mock_create:
+            res = pm.action_generate_static_va()
+            self.assertTrue(pm.seerbit_va_id)
+            self.assertEqual(pm.seerbit_va_account_number, '7788990011')
+            self.assertEqual(pm.seerbit_va_bank_name, 'Providus Bank')
+            # Verify call args had fullName with name + ID, and fallback email
+            called_kwargs = mock_create.call_args[1]
+            self.assertIn('Till Transfer 1', called_kwargs['full_name'])
+            self.assertIn(f'Till {pm.id}', called_kwargs['full_name'])
+            self.assertTrue(called_kwargs['email'].endswith('@pos.seerbit.com'))
+
+    def test_regenerate_static_va_creates_new_account_and_updates_pm(self):
+        company = self.company_a
+        pm = self.env['pos.payment.method'].create({
+            'name': 'Regen Till',
+            'company_id': company.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+        })
+        # Mock initial VA
+        old_va = self.env['seerbit.virtual.account'].create({
+            'name': 'Old VA',
+            'company_id': company.id,
+            'account_number': '1111222233',
+            'bank_name': 'Old Bank',
+            'reference': 'POS_STATIC_OLD',
+            'va_type': 'pos_static',
+        })
+        pm.seerbit_va_id = old_va.id
+
+        # Now regenerate
+        mock_new_response = {
+            'code': 'S20',
+            'payments': {
+                'walletName': 'Regen Till New',
+                'accountNumber': '9999888877',
+                'bankName': 'New Bank',
+                'reference': 'POS_STATIC_NEW_2',
+            }
+        }
+        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.create_virtual_account', return_value=mock_new_response) as mock_create:
+            res = pm.action_generate_static_va()
+            # Assert pm now points to the new VA
+            self.assertNotEqual(pm.seerbit_va_id.id, old_va.id)
+            self.assertEqual(pm.seerbit_va_account_number, '9999888877')
+            self.assertEqual(pm.seerbit_va_bank_name, 'New Bank')
+            # Assert old VA is still preserved in db
+            self.assertTrue(old_va.exists())
+            self.assertEqual(old_va.account_number, '1111222233')
+            # Verify call arguments
+            called_kwargs = mock_create.call_args[1]
+            self.assertIn('Regen Till', called_kwargs['full_name'])
+            self.assertIn(f'Till {pm.id}', called_kwargs['full_name'])
+
     def test_action_generate_va_on_pos_static_virtual_account(self):
         va = self.env['seerbit.virtual.account'].create({
             'name': 'Direct Static VA',

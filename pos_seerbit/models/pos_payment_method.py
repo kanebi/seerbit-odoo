@@ -285,18 +285,36 @@ class PosPaymentMethod(models.Model):
             return False
 
         partner = company.partner_id
-        email = partner.email or 'pos@seerbit.com'
-        email_user, email_domain = email.split('@') if '@' in email else (email, 'seerbit.com')
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
 
         import uuid
-        tag = uuid.uuid4().hex[:6]
-        va_ref = f"POS_STATIC_{self.id or tag}_{uuid.uuid4().hex[:4]}"
-        va_name = f"{company.name} - {self.name}"
-        # Use unique email per static account so SeerBit reserves a dedicated customer account
-        unique_email = f"{email_user}+pos_{self.id or tag}@{email_domain}"
+        import re
+
+        # 1. Generate unique reference with database collision pre-check
+        while True:
+            token = uuid.uuid4().hex[:6].upper()
+            candidate_ref = f"POS_STATIC_{self.id or 'NEW'}_{token}"
+            if not self.env['seerbit.virtual.account'].search_count([('reference', '=', candidate_ref)]):
+                va_ref = candidate_ref
+                break
+
+        # 2. Name tied to payment method name and unique ID (capped at 50 chars for banking standard)
+        pm_tag = f"Till {self.id}" if self.id else "Till"
+        raw_name = f"{self.name} ({pm_tag}) - {company.name}"
+        va_name = raw_name[:50].strip()
+
+        # 3. Derive unique email tied to company, payment method, ID, and token to prevent SeerBit S12 customer collisions
+        clean_pm = re.sub(r'[^a-zA-Z0-9]', '', self.name or 'pos').lower()[:10]
+        base_email = partner.email or company.email
+        if base_email and '@' in base_email:
+            email_user, email_domain = base_email.split('@', 1)
+            clean_user = re.sub(r'[^a-zA-Z0-9._-]', '', email_user) or 'pos'
+            unique_email = f"{clean_user}+pm{self.id or 'new'}_{token.lower()}@{email_domain}"
+        else:
+            clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
+            unique_email = f"{clean_comp}_{clean_pm}_{self.id or 'new'}_{token.lower()}@pos.seerbit.com"
 
         try:
             with self.env.cr.savepoint():
@@ -355,14 +373,11 @@ class PosPaymentMethod(models.Model):
         if self.seerbit_transfer_type != 'static':
             raise UserError(_("Virtual Account generation is only applicable for Static Transfer Type. Dynamic Virtual Accounts are generated automatically per order during POS checkout."))
 
-        company = self.company_id or self.env.company
-        partner = company.partner_id
-        if not partner.email:
-            raise UserError(_("The company '%s' must have an email address to create a Virtual Account.") % company.name)
-
         va = self._generate_static_va(force=True)
         if not va:
             raise UserError(_("Failed to generate Virtual Account. Please verify your company SeerBit configuration."))
+
+        self.flush_recordset()
 
         return {
             'type': 'ir.actions.client',

@@ -264,7 +264,7 @@ class SeerbitVirtualAccount(models.Model):
             raise UserError(_("Virtual Account is already generated."))
 
         partner = self.partner_id or self.company_id.partner_id or self.env.company.partner_id
-        if not partner.email:
+        if not partner.email and self.va_type != 'pos_static':
             raise UserError(_("An email address on '%s' is required to create a Virtual Account.") % partner.name)
 
         company = self.company_id or partner.company_id or self.env.company
@@ -274,19 +274,36 @@ class SeerbitVirtualAccount(models.Model):
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
         import uuid
+        import re
+
+        while True:
+            token = uuid.uuid4().hex[:6].upper()
+            if self.va_type == 'pos_static':
+                candidate_ref = f"POS_STATIC_{self.id or 'NEW'}_{token}"
+            else:
+                candidate_ref = f"VA_{partner.id}_{token}"
+            if not self.search_count([('reference', '=', candidate_ref)]):
+                reference = candidate_ref
+                break
 
         if self.va_type == 'pos_static':
-            reference = f"POS_STATIC_{self.id or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:4]}"
-            full_name = self.name or f"{company.name} - POS Static"
+            full_name = (self.name or f"{company.name} - POS Static")[:50]
+            base_email = partner.email or company.email
+            if base_email and '@' in base_email:
+                u, d = base_email.split('@', 1)
+                email = f"{u}+va{self.id or 'new'}_{token.lower()}@{d}"
+            else:
+                clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
+                email = f"{clean_comp}_va{self.id or 'new'}_{token.lower()}@pos.seerbit.com"
         else:
-            reference = f"VA_{partner.id}_{uuid.uuid4().hex[:8]}"
             full_name = partner.name
+            email = partner.email
 
         try:
             res = api_client.create_virtual_account(
                 full_name=full_name,
                 reference=reference,
-                email=partner.email
+                email=email
             )
             payments_data = res.get('payments') if isinstance(res.get('payments'), dict) else res
 
