@@ -28,7 +28,17 @@ patch(PaymentScreenPaymentLines.prototype, {
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
-            validateOrder: () => this.props.validateOrder?.(),
+            validateOrder: () => {
+                if (typeof this.pos?.validateOrder === "function") {
+                    return this.pos.validateOrder();
+                }
+                if (typeof this.pos?._active_payment_screen?.validateOrder === "function") {
+                    return this.pos._active_payment_screen.validateOrder();
+                }
+                if (typeof this.props.validateOrder === "function") {
+                    return this.props.validateOrder();
+                }
+            },
         }, {
             onClose: () => {
                 line._seerbit_modal_open = false;
@@ -74,7 +84,12 @@ patch(PosOrder.prototype, {
 patch(PaymentScreen.prototype, {
     setup() {
         super.setup(...arguments);
+        this.pos._active_payment_screen = this;
+        this.pos.validateOrder = (isForce = false) => this.validateOrder(isForce);
+
         onMounted(() => {
+            this.pos._active_payment_screen = this;
+            this.pos.validateOrder = (isForce = false) => this.validateOrder(isForce);
             const pendingPaymentLine = this.pos.getPendingPaymentLine("seerbit");
             if (pendingPaymentLine) {
                 if (pendingPaymentLine.set_payment_status) {
@@ -86,6 +101,12 @@ patch(PaymentScreen.prototype, {
         });
 
         onWillUnmount(() => {
+            if (this.pos._active_payment_screen === this) {
+                this.pos._active_payment_screen = null;
+            }
+            if (this.pos.validateOrder) {
+                delete this.pos.validateOrder;
+            }
             this.paymentLines.forEach((line) => {
                 if (line.payment_method_id.use_payment_terminal === "seerbit") {
                     line.payment_method_id.payment_terminal?.close?.();

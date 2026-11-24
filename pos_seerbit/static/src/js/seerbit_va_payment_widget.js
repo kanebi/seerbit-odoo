@@ -317,11 +317,25 @@ export class SeerbitVaPaymentWidget extends Component {
         );
 
         const order = this.pos.getOrder ? this.pos.getOrder() : this.pos.get_order();
-        if (order && (order.isPaid ? order.isPaid() : order.is_paid?.())) {
-            if (this.props.validateOrder) {
-                this.props.validateOrder();
-            } else if (this.pos.validateOrder) {
-                this.pos.validateOrder();
+        if (order) {
+            const isPaid = order.isPaid ? order.isPaid() : (order.is_paid ? order.is_paid() : false);
+            const due = order.get_due ? order.get_due() : (order.totalDue !== undefined ? order.totalDue : 0);
+            if ((isPaid || due <= 0.01) && due <= 0.01) {
+                const validateFn = this.props.validateOrder;
+                const posRef = this.pos;
+                setTimeout(async () => {
+                    try {
+                        if (typeof validateFn === "function") {
+                            await validateFn();
+                        } else if (typeof posRef?.validateOrder === "function") {
+                            await posRef.validateOrder();
+                        } else if (typeof posRef?._active_payment_screen?.validateOrder === "function") {
+                            await posRef._active_payment_screen.validateOrder();
+                        }
+                    } catch (e) {
+                        console.error("Error auto-validating order from widget:", e);
+                    }
+                }, 100);
             }
         }
     }

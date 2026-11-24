@@ -726,6 +726,11 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     _finishSuccess() {
+        if (this._isFinishingSuccess) {
+            return;
+        }
+        this._isFinishingSuccess = true;
+
         if (this.statusPoller) {
             clearInterval(this.statusPoller);
             this.statusPoller = null;
@@ -743,6 +748,9 @@ export class SeerbitVaModalPopup extends Component {
             this.pos._active_seerbit_modal = null;
         }
 
+        const validateFn = this.props.validateOrder;
+        const posRef = this.pos;
+
         try {
             if (this.props.close) {
                 this.props.close();
@@ -753,21 +761,33 @@ export class SeerbitVaModalPopup extends Component {
             console.error("Error closing modal after success:", e);
         }
 
-        const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
-        if (order && (order.isPaid ? order.isPaid() : order.is_paid?.())) {
-            try {
-                if (this.props.validateOrder) {
-                    this.props.validateOrder();
-                } else if (this.pos?.validateOrder) {
-                    this.pos.validateOrder();
-                }
-            } catch (e) {
-                console.error("Error validating order:", e);
+        // Auto-validate order if fully paid (no payment line with remaining balance)
+        const order = posRef?.getOrder ? posRef.getOrder() : posRef?.get_order?.();
+        if (order) {
+            const isPaid = order.isPaid ? order.isPaid() : (order.is_paid ? order.is_paid() : false);
+            const due = order.get_due ? order.get_due() : (order.totalDue !== undefined ? order.totalDue : 0);
+            if ((isPaid || due <= 0.01) && due <= 0.01) {
+                setTimeout(async () => {
+                    try {
+                        if (typeof validateFn === "function") {
+                            await validateFn();
+                        } else if (typeof posRef?.validateOrder === "function") {
+                            await posRef.validateOrder();
+                        } else if (typeof posRef?._active_payment_screen?.validateOrder === "function") {
+                            await posRef._active_payment_screen.validateOrder();
+                        }
+                    } catch (e) {
+                        console.error("Error auto-validating order after modal success:", e);
+                    }
+                }, 100);
             }
         }
     }
 
     _closeModal() {
+        if (this.state.isSuccess) {
+            return this._finishSuccess();
+        }
         this._stopCountdownTimer();
         this._stopQuietSpooler();
         if (this.statusPoller) {

@@ -79,17 +79,27 @@ export const posSeerbitBusService = {
                             { type: "success" }
                         );
 
-                        // Trigger open modal if present so it transitions to success view and closes in 3s
+                        // Trigger open modal if present so it transitions to success view and auto-validates on completion
                         const activeModal = line._seerbit_modal || pos._active_seerbit_modal;
                         if (activeModal && typeof activeModal.showSuccessAndClose === "function") {
                             activeModal.showSuccessAndClose(data);
                             return;
                         }
 
-                        if (currentOrder.isPaid ? currentOrder.isPaid() : currentOrder.is_paid?.()) {
-                            if (pos.validateOrder) {
-                                pos.validateOrder();
-                            }
+                        const isPaid = currentOrder.isPaid ? currentOrder.isPaid() : (currentOrder.is_paid ? currentOrder.is_paid() : false);
+                        const due = currentOrder.get_due ? currentOrder.get_due() : (currentOrder.totalDue !== undefined ? currentOrder.totalDue : 0);
+                        if ((isPaid || due <= 0.01) && due <= 0.01) {
+                            setTimeout(async () => {
+                                try {
+                                    if (typeof pos.validateOrder === "function") {
+                                        await pos.validateOrder();
+                                    } else if (typeof pos._active_payment_screen?.validateOrder === "function") {
+                                        await pos._active_payment_screen.validateOrder();
+                                    }
+                                } catch (e) {
+                                    console.error("Error auto-validating order from bus listener:", e);
+                                }
+                            }, 100);
                         }
                     }
                 }
@@ -176,17 +186,27 @@ export const posSeerbitBusService = {
                             { type: "success" }
                         );
 
-                        // Trigger open modal if present so it transitions to success view and closes in 3s
+                        // Trigger open modal if present so it transitions to success view and auto-validates on completion
                         const activeModal = line._seerbit_modal || pos._active_seerbit_modal;
                         if (activeModal && typeof activeModal.showSuccessAndClose === "function") {
                             activeModal.showSuccessAndClose(data);
                             return;
                         }
 
-                        if (currentOrder.isPaid ? currentOrder.isPaid() : currentOrder.is_paid?.()) {
-                            if (pos.validateOrder) {
-                                pos.validateOrder();
-                            }
+                        const isPaid = currentOrder.isPaid ? currentOrder.isPaid() : (currentOrder.is_paid ? currentOrder.is_paid() : false);
+                        const due = currentOrder.get_due ? currentOrder.get_due() : (currentOrder.totalDue !== undefined ? currentOrder.totalDue : 0);
+                        if ((isPaid || due <= 0.01) && due <= 0.01) {
+                            setTimeout(async () => {
+                                try {
+                                    if (typeof pos.validateOrder === "function") {
+                                        await pos.validateOrder();
+                                    } else if (typeof pos._active_payment_screen?.validateOrder === "function") {
+                                        await pos._active_payment_screen.validateOrder();
+                                    }
+                                } catch (e) {
+                                    console.error("Error auto-validating order from bus listener:", e);
+                                }
+                            }, 100);
                         }
                     }
                 }
