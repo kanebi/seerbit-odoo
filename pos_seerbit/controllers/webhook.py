@@ -362,12 +362,6 @@ class SeerbitWebhookController(http.Controller):
                             payer_name=payer_name,
                             raw_payload=payment_data,
                         )
-                        send_seerbit_ui_notification(
-                            request.env,
-                            'Seerbit POS Payment Received',
-                            f'VA POS Payment of {amount} received from {payer_name} (Ref: {reference})',
-                            record=tx,
-                        )
                         _logger.info(
                             "Seerbit Webhook: Processed POS VA transaction %s for account %s",
                             tx.reference, account_number,

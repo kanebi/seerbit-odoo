@@ -160,6 +160,7 @@ class SeerbitVaTransaction(models.Model):
         if existing:
             if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
                 existing.write({'payer_name': payer_name})
+            # If an existing payment line references this, link it, but NEVER re-broadcast old notifications
             if existing.matching_status == 'unmatched' and va.va_type in ('pos_static', 'pos_dynamic'):
                 payment = self.env['pos.payment'].search([
                     '|',
@@ -168,10 +169,6 @@ class SeerbitVaTransaction(models.Model):
                 ], limit=1)
                 if payment and payment.pos_order_id:
                     self._match_transaction_to_payment(existing, payment, payer_name, amount)
-                elif not skip_auto_match:
-                    self.env['pos.order']._attempt_va_auto_match(existing)
-                else:
-                    self._broadcast_unmatched_received(existing, has_multiple_same_amount=True)
             return existing
 
         vals = {
@@ -202,10 +199,6 @@ class SeerbitVaTransaction(models.Model):
                     ], limit=1)
                     if payment and payment.pos_order_id:
                         self._match_transaction_to_payment(existing, payment, payer_name, amount)
-                    elif not skip_auto_match:
-                        self.env['pos.order']._attempt_va_auto_match(existing)
-                    else:
-                        self._broadcast_unmatched_received(existing, has_multiple_same_amount=True)
                 return existing
             raise
 

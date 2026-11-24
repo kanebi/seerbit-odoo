@@ -30,6 +30,22 @@ export const posSeerbitBusService = {
 
         const clean = (val) => String(val || "").trim();
 
+        // Deduplication map to prevent duplicate bus messages across channels/reloads
+        const processedEvents = new Map();
+        const isDuplicateEvent = (eventKey, ttl = 120000) => {
+            const now = Date.now();
+            for (const [key, timestamp] of processedEvents.entries()) {
+                if (now - timestamp > ttl) {
+                    processedEvents.delete(key);
+                }
+            }
+            if (processedEvents.has(eventKey)) {
+                return true;
+            }
+            processedEvents.set(eventKey, now);
+            return false;
+        };
+
         const getAllOrders = () => {
             let orders = [];
             if (pos.models?.["pos.order"]?.getAll) {
@@ -143,6 +159,14 @@ export const posSeerbitBusService = {
             const { type, data } = payload || {};
             if (!data) return;
 
+            // Deduplicate incoming events across channels, reloads, and webhooks
+            const eventRef = data.reference || data.transaction_id || "";
+            const eventKey = `${type}_${eventRef}_${data.amount || ""}_${data.matching_status || ""}`;
+            if (eventRef && isDuplicateEvent(eventKey)) {
+                console.log("SeerBit POS: Suppressing duplicate bus event:", eventKey);
+                return;
+            }
+
             const allOrders = getAllOrders();
 
             if (type === "seerbit_va_payment_matched") {
@@ -165,17 +189,16 @@ export const posSeerbitBusService = {
                         matchLineWithData(line, targetOrder, data);
                         notification.add(
                             _t("Payment of %s automatically matched from %s!", data.amount, data.payer_name),
-                            { type: "success" }
+                            { type: "success", sticky: false }
                         );
                     }
                 }
             } else if (type === "seerbit_va_payment_received") {
-                const msg = data.is_transferred ?
-                    _t("Bank transfer of %s received (Transferred from %s, Ref: %s)", data.amount, data.from_till || "another till", data.reference) :
-                    _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference);
-                notification.add(msg, { type: "info" });
-
                 if (data.is_transferred) {
+                    notification.add(
+                        _t("Bank transfer of %s received (Transferred from %s, Ref: %s)", data.amount, data.from_till || "another till", data.reference),
+                        { type: "info", sticky: false }
+                    );
                     const activeModal = pos._active_seerbit_modal;
                     if (activeModal && typeof activeModal.fetchPayments === "function") {
                         activeModal.fetchPayments();
@@ -207,7 +230,7 @@ export const posSeerbitBusService = {
                         matchLineWithData(line, ord, data);
                         notification.add(
                             _t("Payment of %s automatically matched from %s!", data.amount, data.payer_name),
-                            { type: "success" }
+                            { type: "success", sticky: false }
                         );
                         matchedDynamic = true;
                         break;
@@ -240,7 +263,7 @@ export const posSeerbitBusService = {
                     matchLineWithData(targetLine, targetOrder, data);
                     notification.add(
                         _t("Payment of %s automatically matched from %s!", data.amount, data.payer_name),
-                        { type: "success" }
+                        { type: "success", sticky: false }
                     );
                     return;
                 }
@@ -249,7 +272,12 @@ export const posSeerbitBusService = {
                 if (data.has_multiple_same_amount || data.requires_manual_match) {
                     notification.add(
                         _t("Multiple payments of %s received on this Virtual Account. Manual selection required.", data.amount),
-                        { type: "warning" }
+                        { type: "warning", sticky: false }
+                    );
+                } else {
+                    notification.add(
+                        _t("New bank transfer received: %s from %s (Ref: %s)", data.amount, data.payer_name, data.reference),
+                        { type: "info", sticky: false }
                     );
                 }
                 const activeModal = pos._active_seerbit_modal;
