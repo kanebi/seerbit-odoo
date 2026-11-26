@@ -462,11 +462,13 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertTrue(pm.seerbit_va_id)
             self.assertEqual(pm.seerbit_va_account_number, '7788990011')
             self.assertEqual(pm.seerbit_va_bank_name, 'Providus Bank')
-            # Verify call args had fullName with name + ID, and fallback email
+            # Verify call args had fullName with name + ID, and slugified fallback email without '+'
             called_kwargs = mock_create.call_args[1]
             self.assertIn('Till Transfer 1', called_kwargs['full_name'])
             self.assertIn(f'Till {pm.id}', called_kwargs['full_name'])
+            self.assertTrue(called_kwargs['email'].startswith('till_transfer_1_pm'))
             self.assertTrue(called_kwargs['email'].endswith('@pos.seerbit.com'))
+            self.assertNotIn('+', called_kwargs['email'])
 
     def test_regenerate_static_va_creates_new_account_and_updates_pm(self):
         company = self.company_a
@@ -617,7 +619,10 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertEqual(res['bank_name'], 'Wema Bank')
             self.assertEqual(res['amount'], 7500.0)
             self.assertEqual(mock_create.call_args.kwargs['customer_name'], self.company_a.name[:50].strip())
-            self.assertIn("@", mock_create.call_args.kwargs['customer_email'])
+            dyn_email = mock_create.call_args.kwargs['customer_email']
+            self.assertIn("@", dyn_email)
+            self.assertNotIn("+", dyn_email)
+            self.assertTrue(dyn_email.startswith("dynamic_method_pos_dyn_pos_001_"))
 
             # Ensure the dynamic VA was saved in seerbit.virtual.account with va_type='pos_dynamic'
             va = self.env['seerbit.virtual.account'].browse(res['va_id'])

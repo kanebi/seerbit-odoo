@@ -267,6 +267,33 @@ class PosPaymentMethod(models.Model):
         elif self.seerbit_transfer_type == 'dynamic':
             self.seerbit_va_id = False
 
+    def _build_seerbit_email(self, unique_tag, base_email=None):
+        """
+        Derives a unique email combining normalized & slugified payment method name,
+        a unique tag (e.g. pm_id_token or order_ref_token), and the company/domain.
+        Never uses '+' characters to prevent SeerBit customer email collisions / S12 errors.
+        """
+        # Slugify payment method name (letters and digits separated by single underscores)
+        raw_slug = re.sub(r'[^a-zA-Z0-9]+', '_', (self.name or 'pos').strip().lower()).strip('_')
+        slug_pm = raw_slug[:25] or 'pos'
+
+        # Extract mail domain from company/partner email or fallback
+        company = self.company_id or self.env.company
+        partner = company.partner_id
+        candidate_email = base_email or company.email or partner.email or ''
+        mail_domain = None
+        if candidate_email and '@' in candidate_email:
+            _, candidate_domain = candidate_email.split('@', 1)
+            clean_domain = re.sub(r'[^a-zA-Z0-9.-]', '', candidate_domain.strip().lower())
+            if clean_domain and '.' in clean_domain:
+                mail_domain = clean_domain
+
+        if not mail_domain:
+            mail_domain = 'pos.seerbit.com'
+
+        clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', str(unique_tag).strip().lower())
+        return f"{slug_pm}_{clean_tag}@{mail_domain}"
+
     def _generate_static_va(self, force=False):
         """
         Creates and links a new Static Virtual Account via SeerBit API.
@@ -305,16 +332,9 @@ class PosPaymentMethod(models.Model):
         raw_name = f"{self.name} ({pm_tag}) - {company.name}"
         va_name = raw_name[:50].strip()
 
-        # 3. Derive unique email tied to company, payment method, ID, and token to prevent SeerBit S12 customer collisions
-        clean_pm = re.sub(r'[^a-zA-Z0-9]', '', self.name or 'pos').lower()[:10]
-        base_email = partner.email or company.email
-        if base_email and '@' in base_email:
-            email_user, email_domain = base_email.split('@', 1)
-            clean_user = re.sub(r'[^a-zA-Z0-9._-]', '', email_user) or 'pos'
-            unique_email = f"{clean_user}+pm{self.id or 'new'}_{token.lower()}@{email_domain}"
-        else:
-            clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
-            unique_email = f"{clean_comp}_{clean_pm}_{self.id or 'new'}_{token.lower()}@pos.seerbit.com"
+        # 3. Derive unique email combining normalized & slugified payment method name, ID/token, and mail domain
+        # Prevents SeerBit customer email collisions / S12 errors without invalid '+' characters
+        unique_email = self._build_seerbit_email(f"pm{self.id or 'new'}_{token.lower()}")
 
         try:
             with self.env.cr.savepoint():
@@ -416,20 +436,11 @@ class PosPaymentMethod(models.Model):
         # Dynamic accounts are created with company name as name (same as static).
         name = (company.name or "Company")[:50].strip()
 
-        # Uniqueness is only with emails to prevent SeerBit S12 customer collisions
-        clean_comp = re.sub(r'[^a-zA-Z0-9]', '', company.name or 'comp').lower()[:10] or 'pos'
-        if customer_email and '@' in customer_email:
-            local, domain = customer_email.split('@', 1)
-            clean_local = re.sub(r'[^a-zA-Z0-9._-]', '', local) or 'customer'
-            email = f"{clean_local}+{token.lower()}@{domain}"
-        else:
-            base_email = company.email or partner.email
-            if base_email and '@' in base_email:
-                email_user, email_domain = base_email.split('@', 1)
-                clean_user = re.sub(r'[^a-zA-Z0-9._-]', '', email_user) or clean_comp
-                email = f"{clean_user}+dyn_{clean_order_ref.lower()}_{token.lower()}@{email_domain}"
-            else:
-                email = f"{clean_comp}_dyn_{clean_order_ref.lower()}_{token.lower()}@pos.seerbit.com"
+        # Uniqueness is with emails: normalized & slugified payment method + order_ref + token + mail domain
+        email = self._build_seerbit_email(
+            f"dyn_{clean_order_ref.lower()}_{token.lower()}",
+            base_email=customer_email
+        )
 
         from ..services.seerbit_api import SeerbitAPI
         api_client = SeerbitAPI(self.env, company=company)
