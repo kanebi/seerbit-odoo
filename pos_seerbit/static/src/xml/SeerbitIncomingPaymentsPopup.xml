@@ -14,17 +14,29 @@
                              style="height: 24px; width: auto; object-fit: contain;"/>
                         <span class="fs-6 fw-bolder text-dark">Select Bank Payment</span>
                     </div>
-                    <button class="btn btn-close fs-6 p-1" aria-label="Close" t-on-click="props.close"/>
+                    <button class="btn btn-close fs-6 p-1" aria-label="Close" t-on-click="closePopup"/>
                 </div>
 
                 <div class="p-3 overflow-y-auto" style="max-height: calc(85vh - 100px);">
+                    <!-- Partially Matched Banner -->
+                    <div t-if="state.isPartiallyMatched" class="alert alert-info py-2 px-3 mb-2 rounded-3 border-0 shadow-sm d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="fa fa-adjust me-2 text-primary"/>
+                            <span class="fw-bold">Partially Matched: <t t-esc="formatAmount(state.settledAmount)"/> settled.</span>
+                            <span class="ms-2">Remaining to match: <strong><t t-esc="formatAmount(expectedAmount)"/></strong></span>
+                        </div>
+                        <span class="badge rounded-pill bg-primary text-white px-2 py-1">
+                            Partial (<t t-esc="state.matchedTransactions.length"/>)
+                        </span>
+                    </div>
+
                     <!-- Top Summary & Refresh -->
                     <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded border">
                         <div>
                             <span class="small fw-bold" style="color: #374151;">Account:</span>
                             <strong class="font-monospace fs-6 text-dark ms-1"><t t-esc="props.accountNumber"/></strong>
                             <span class="small fw-bold ms-3" style="color: #374151;">Amount Needed:</span>
-                            <strong class="text-success fs-6 ms-1"><t t-esc="formatAmount(props.expectedAmount)"/></strong>
+                            <strong class="text-success fs-6 ms-1"><t t-esc="formatAmount(expectedAmount)"/></strong>
                         </div>
                         <div>
                             <button class="btn btn-primary btn-sm px-3 py-1 fw-bold shadow-sm"

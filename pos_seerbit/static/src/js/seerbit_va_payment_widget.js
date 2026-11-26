@@ -250,7 +250,8 @@ export class SeerbitVaPaymentWidget extends Component {
             this._startCountdownTimer();
         } catch (err) {
             console.error("Failed to generate dynamic virtual account:", err);
-            this.state.error = err.message || _t("Failed to generate dynamic Virtual Account.");
+            const errorMsg = err.data?.message || err.data?.data?.message || err.message || _t("Failed to generate dynamic Virtual Account.");
+            this.state.error = errorMsg;
             this.notification.add(this.state.error, { type: "danger" });
         } finally {
             this.state.generatingDynamicVa = false;
@@ -294,6 +295,11 @@ export class SeerbitVaPaymentWidget extends Component {
         line.seerbit_transaction_ref = transaction.reference;
         line.seerbit_payer_name = transaction.payer_name;
         line.seerbit_va_transaction_id = transaction.transaction_id;
+        line.seerbit_matched_amount = transaction.amount || this.expectedAmount;
+        if (!line.seerbit_is_partially_matched) {
+            line.seerbit_matched_count = 1;
+        }
+        line.seerbit_is_partially_matched = false;
         line.seerbit_is_matched = true;
         // Populate standard Odoo fields so references show up on orders, payment forms, and reports
         line.transaction_id = transaction.reference;
