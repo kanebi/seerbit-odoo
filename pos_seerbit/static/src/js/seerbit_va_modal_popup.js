@@ -666,6 +666,8 @@ export class SeerbitVaModalPopup extends Component {
                     { type: "success" }
                 );
                 this.closeTransferModal();
+                this.state.payments = this.state.payments.filter((p) => p.id !== payment.id);
+                this.state.unmatchedCount = this.state.payments.length;
                 await this.fetchPayments();
             } else {
                 this.notification.add(res.error || _t("Failed to transfer payment to till."), { type: "danger" });

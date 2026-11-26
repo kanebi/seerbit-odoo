@@ -317,7 +317,7 @@ class SeerbitVaTransaction(models.Model):
 
         domain = [
             ('status', '=', 'successful'),
-            ('matching_status', 'in', ['unmatched', 'transferred']),
+            ('matching_status', '=', 'unmatched'),
         ]
 
         if va.exists() and acc_num:

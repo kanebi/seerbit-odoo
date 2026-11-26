@@ -3,7 +3,9 @@ import json
 import logging
 import pprint
 import random
+import re
 import string
+import uuid
 import warnings
 import sys
 import threading
@@ -269,15 +271,19 @@ class PosPaymentMethod(models.Model):
 
     def _build_seerbit_email(self, unique_tag, base_email=None):
         """
-        Derives a unique email combining normalized & slugified payment method name,
-        a unique tag (e.g. pm_id_token or order_ref_token), and the company/domain.
+        Derives a unique email combining randomized prepended characters,
+        normalized & slugified payment method name, a unique tag, and mail domain.
         Never uses '+' characters to prevent SeerBit customer email collisions / S12 errors.
         """
-        # Slugify payment method name (letters and digits separated by single underscores)
+        import uuid
+        # 1. Randomized prepended characters for absolute uniqueness on every generation/regeneration
+        rand_prefix = uuid.uuid4().hex[:6].lower()
+
+        # 2. Slugify payment method name (letters and digits separated by single underscores)
         raw_slug = re.sub(r'[^a-zA-Z0-9]+', '_', (self.name or 'pos').strip().lower()).strip('_')
         slug_pm = raw_slug[:25] or 'pos'
 
-        # Extract mail domain from company/partner email or fallback
+        # 3. Extract mail domain from company/partner email or fallback
         company = self.company_id or self.env.company
         partner = company.partner_id
         candidate_email = base_email or company.email or partner.email or ''
@@ -292,7 +298,7 @@ class PosPaymentMethod(models.Model):
             mail_domain = 'pos.seerbit.com'
 
         clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', str(unique_tag).strip().lower())
-        return f"{slug_pm}_{clean_tag}@{mail_domain}"
+        return f"{rand_prefix}_{slug_pm}_{clean_tag}@{mail_domain}"
 
     def _generate_static_va(self, force=False):
         """
