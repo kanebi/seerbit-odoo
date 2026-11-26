@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
 import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
-import { usePos } from "@point_of_sale/app/hooks/pos_hook";
+import { usePos } from "@point_of_sale/app/store/pos_hook";
 import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
 import { AlertDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
@@ -201,7 +201,11 @@ export class SeerbitVaPaymentWidget extends Component {
     }
 
     async _initDynamicVa() {
-        if (this.paymentLine?.seerbit_dynamic_account_number && !this.state.isExpired) {
+        const amount = this.paymentLine ? (this.paymentLine.get_amount ? this.paymentLine.get_amount() : (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0)) : 0;
+        const previousAmount = this.paymentLine?.seerbit_dynamic_amount;
+        const amountChanged = previousAmount && Math.abs(parseFloat(previousAmount) - parseFloat(amount)) > 0.01;
+
+        if (!amountChanged && this.paymentLine?.seerbit_dynamic_account_number && !this.state.isExpired) {
             this.state.dynamicVa = {
                 account_number: this.paymentLine.seerbit_dynamic_account_number,
                 bank_name: this.paymentLine.seerbit_dynamic_bank_name,
@@ -219,7 +223,6 @@ export class SeerbitVaPaymentWidget extends Component {
         try {
             const order = this.pos.getOrder ? this.pos.getOrder() : this.pos.get_order();
             const orderRef = (order?.pos_reference || order?.name || `ORD_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "");
-            const amount = this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
             const customer = order?.get_partner ? order.get_partner() : order?.partner;
 
             const res = await this.orm.call(
@@ -247,7 +250,8 @@ export class SeerbitVaPaymentWidget extends Component {
             this._startCountdownTimer();
         } catch (err) {
             console.error("Failed to generate dynamic virtual account:", err);
-            this.state.error = err.message || _t("Failed to generate dynamic Virtual Account.");
+            const errorMsg = err.data?.message || err.data?.data?.message || err.message || _t("Failed to generate dynamic Virtual Account.");
+            this.state.error = errorMsg;
             this.notification.add(this.state.error, { type: "danger" });
         } finally {
             this.state.generatingDynamicVa = false;
@@ -291,6 +295,11 @@ export class SeerbitVaPaymentWidget extends Component {
         line.seerbit_transaction_ref = transaction.reference;
         line.seerbit_payer_name = transaction.payer_name;
         line.seerbit_va_transaction_id = transaction.transaction_id;
+        line.seerbit_matched_amount = transaction.amount || this.expectedAmount;
+        if (!line.seerbit_is_partially_matched) {
+            line.seerbit_matched_count = 1;
+        }
+        line.seerbit_is_partially_matched = false;
         line.seerbit_is_matched = true;
         // Populate standard Odoo fields so references show up on orders, payment forms, and reports
         line.transaction_id = transaction.reference;
@@ -301,16 +310,18 @@ export class SeerbitVaPaymentWidget extends Component {
         const payerToDisplay = transaction.payer_name || 'N/A';
         if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
             const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
-            if (line.setReceiptInfo) {
+            if (line.set_receipt_info) {
+                line.set_receipt_info(receiptText);
+            } else if (line.setReceiptInfo) {
                 line.setReceiptInfo(receiptText);
             } else {
                 line.ticket = (line.ticket || '') + receiptText;
             }
         }
-        if (line.setPaymentStatus) {
-            line.setPaymentStatus("done");
-        } else if (line.set_payment_status) {
+        if (line.set_payment_status) {
             line.set_payment_status("done");
+        } else if (line.setPaymentStatus) {
+            line.setPaymentStatus("done");
         }
 
         this.notification.add(

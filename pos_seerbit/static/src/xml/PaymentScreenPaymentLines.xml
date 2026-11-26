@@ -15,9 +15,23 @@
         <!-- Matched / Awaiting Payment Badge for Active Selected Line -->
         <xpath expr="//span[contains(@class, 'payment-name')]" position="after">
             <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
-                <span t-if="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
-                      class="badge bg-success ms-2 fs-6 fw-bold">
+                <span t-if="line.seerbit_is_partially_matched" 
+                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center">
+                    <i class="fa fa-adjust me-1"/>Partially Matched
+                    <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem; border: 1px solid rgba(0,0,0,0.15);">
+                            <t t-esc="line.seerbit_matched_count"/>
+                        </span>
+                    </t>
+                </span>
+                <span t-elif="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
+                      class="badge bg-success ms-2 fs-6 fw-bold d-inline-flex align-items-center">
                     <i class="fa fa-check me-1"/>Matched
+                    <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem;">
+                            <t t-esc="line.seerbit_matched_count"/>
+                        </span>
+                    </t>
                 </span>
                 <span t-else="" 
                       class="badge bg-warning text-dark ms-2 fs-6 fw-bold">
@@ -40,9 +54,23 @@
         <!-- Matched / Awaiting Payment Badge for Inactive Unselected Line -->
         <xpath expr="//div[contains(@class, 'bg-view')]//div[contains(@class, 'payment-amount')]" position="before">
             <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
-                <span t-if="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
-                      class="badge bg-success ms-2 fs-6 fw-bold">
+                <span t-if="line.seerbit_is_partially_matched" 
+                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center">
+                    <i class="fa fa-adjust me-1"/>Partially Matched
+                    <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem; border: 1px solid rgba(0,0,0,0.15);">
+                            <t t-esc="line.seerbit_matched_count"/>
+                        </span>
+                    </t>
+                </span>
+                <span t-elif="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
+                      class="badge bg-success ms-2 fs-6 fw-bold d-inline-flex align-items-center">
                     <i class="fa fa-check me-1"/>Matched
+                    <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem;">
+                            <t t-esc="line.seerbit_matched_count"/>
+                        </span>
+                    </t>
                 </span>
                 <span t-else="" 
                       class="badge bg-warning text-dark ms-2 fs-6 fw-bold">
@@ -62,7 +90,7 @@
             </t>
         </xpath>
 
-        <xpath expr="//div[contains(@class, 'electronic_payment')]" position="inside">
+        <xpath expr="//div[contains(@class, 'electronic_payment') or contains(@t-attf-class, 'electronic_payment')]" position="inside">
 
             <!-- Seerbit: Waiting for payment -->
             <t t-if="line.payment_status == 'waitingSeerbit'">

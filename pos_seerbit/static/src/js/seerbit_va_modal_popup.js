@@ -53,6 +53,11 @@ export class SeerbitVaModalPopup extends Component {
             selectedTargetTillId: null,
             selectedTargetPmId: null,
             transferringPayment: false,
+            // Partial matching state
+            isPartiallyMatched: false,
+            settledAmount: 0,
+            currentExpectedAmount: this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0,
+            matchedTransactions: [],
         });
 
         this.countdownInterval = null;
@@ -74,7 +79,7 @@ export class SeerbitVaModalPopup extends Component {
             // Periodic safety check: if paymentLine is matched by bus service or anything else,
             // immediately trigger the 3-second success countdown and finish!
             this.statusPoller = setInterval(() => {
-                if (this.paymentLine?.seerbit_is_matched && !this.state.isSuccess) {
+                if (this.paymentLine?.seerbit_is_matched && !this.state.isSuccess && !this.state.isPartiallyMatched) {
                     this.showSuccessAndClose({
                         reference: this.paymentLine.seerbit_transaction_ref,
                         payer_name: this.paymentLine.seerbit_payer_name,
@@ -251,6 +256,13 @@ export class SeerbitVaModalPopup extends Component {
     }
 
     get expectedAmount() {
+        if (this.state?.isPartiallyMatched && this.state?.currentExpectedAmount !== undefined) {
+            return this.state.currentExpectedAmount;
+        }
+        return this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
+    }
+
+    get originalExpectedAmount() {
         return this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
     }
 
@@ -423,7 +435,8 @@ export class SeerbitVaModalPopup extends Component {
             this._startCountdownTimer();
         } catch (err) {
             console.error("Failed to generate dynamic virtual account:", err);
-            this.state.error = err.message || _t("Failed to generate dynamic Virtual Account.");
+            const errorMsg = err.data?.message || err.data?.data?.message || err.message || _t("Failed to generate dynamic Virtual Account.");
+            this.state.error = errorMsg;
             this.notification.add(this.state.error, { type: "danger" });
         } finally {
             this.state.generatingDynamicVa = false;
@@ -592,7 +605,46 @@ export class SeerbitVaModalPopup extends Component {
                 [payment.id, orderUuid, false, "manual_matched"]
             );
             if (res.success) {
-                this._onPaymentConfirmed(res);
+                const payAmt = Number(payment.amount);
+                const currentExpected = this.expectedAmount;
+                const line = this.paymentLine;
+
+                if (payAmt < currentExpected - 0.01) {
+                    // Partial payment matched! Settle exact amount on line and keep modal open
+                    this.state.settledAmount += payAmt;
+                    this.state.matchedTransactions.push(res);
+                    this.state.isPartiallyMatched = true;
+                    this.state.currentExpectedAmount = Math.max(0, currentExpected - payAmt);
+
+                    if (line) {
+                        line.seerbit_matched_amount = this.state.settledAmount;
+                        line.seerbit_is_partially_matched = true;
+                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_transaction_ref = res.reference || payment.reference;
+                        line.seerbit_payer_name = payment.payer_name;
+                        line.transaction_id = res.reference || payment.reference;
+                        line.payment_ref_no = res.reference || payment.reference;
+                    }
+
+                    this.notification.add(
+                        _t("Partial payment of %s matched! Remaining balance: %s", this.formatAmount(payAmt), this.formatAmount(this.state.currentExpectedAmount)),
+                        { type: "info" }
+                    );
+
+                    // Keep modal open and refresh list
+                    await this.fetchPayments();
+                } else {
+                    // Full or completing payment matched!
+                    this.state.settledAmount += payAmt;
+                    this.state.matchedTransactions.push(res);
+                    if (line) {
+                        line.seerbit_matched_amount = this.state.settledAmount;
+                        line.seerbit_is_partially_matched = false;
+                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_is_matched = true;
+                    }
+                    this._onPaymentConfirmed(res);
+                }
             } else {
                 this.notification.add(res.error || _t("Payment selection failed."), { type: "danger" });
                 await this.fetchPayments();
@@ -702,6 +754,11 @@ export class SeerbitVaModalPopup extends Component {
             if (data.reference) line.seerbit_transaction_ref = data.reference;
             if (data.payer_name) line.seerbit_payer_name = data.payer_name;
             if (data.transaction_id || data.id) line.seerbit_va_transaction_id = data.transaction_id || data.id;
+            line.seerbit_matched_amount = data.amount || this.expectedAmount;
+            if (!line.seerbit_is_partially_matched) {
+                line.seerbit_matched_count = 1;
+            }
+            line.seerbit_is_partially_matched = false;
             line.seerbit_is_matched = true;
             if (data.reference) {
                 line.transaction_id = data.reference;
@@ -809,6 +866,24 @@ export class SeerbitVaModalPopup extends Component {
     _closeModal() {
         if (this.state.isSuccess) {
             return this._finishSuccess();
+        }
+        if (this.state.isPartiallyMatched && this.state.settledAmount > 0) {
+            const line = this.paymentLine;
+            if (line) {
+                if (line.set_amount) {
+                    line.set_amount(this.state.settledAmount);
+                } else {
+                    line.amount = this.state.settledAmount;
+                }
+                if (line.set_payment_status) {
+                    line.set_payment_status("done");
+                } else if (line.setPaymentStatus) {
+                    line.setPaymentStatus("done");
+                }
+                line.seerbit_is_partially_matched = true;
+                line.seerbit_is_matched = true;
+                line.seerbit_matched_count = this.state.matchedTransactions.length;
+            }
         }
         this._stopCountdownTimer();
         this._stopQuietSpooler();

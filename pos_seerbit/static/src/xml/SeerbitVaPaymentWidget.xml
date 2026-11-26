@@ -24,6 +24,17 @@
                 <span class="badge bg-success text-white small fw-bold">Done</span>
             </div>
 
+            <!-- Partially Matched Banner -->
+            <div t-if="paymentLine and paymentLine.seerbit_is_partially_matched and !isMatched" class="alert alert-info py-2 px-3 mb-3 rounded-3 border-0 shadow-sm d-flex align-items-center justify-content-between">
+                <span class="fw-bold small text-info"><i class="fa fa-adjust me-1"/> Partially Matched (<t t-esc="env.utils.formatCurrency(paymentLine.seerbit_matched_amount || 0)"/>)</span>
+                <span class="badge rounded-pill bg-primary text-white small fw-bold">
+                    Partial
+                    <t t-if="paymentLine.seerbit_matched_count and paymentLine.seerbit_matched_count &gt; 1">
+                        (<t t-esc="paymentLine.seerbit_matched_count"/>)
+                    </t>
+                </span>
+            </div>
+
             <!-- Pre-Generation State for Dynamic VA -->
             <t t-if="isDynamic and !hasGeneratedDynamicVa">
                 <div class="p-3 mb-3 text-center rounded-3 shadow-sm" style="border: 1px solid #FCD5CE; background: #FFF9F8;">
@@ -106,10 +117,20 @@
                 </div>
 
                 <!-- Exact Amount to Pay Card (Soft Green Border) -->
-                <div class="p-2 mb-3 rounded-3 seerbit-amount-card d-flex justify-content-between align-items-center">
+                <div class="p-2 mb-2 rounded-3 seerbit-amount-card d-flex justify-content-between align-items-center">
                     <span class="small fw-bolder text-uppercase" style="color: #166534; font-size: 0.75rem;">Amount to Pay:</span>
                     <span class="fs-4 fw-bolder font-monospace" style="color: #15803D;">
                         <t t-esc="expectedAmountFormatted"/>
+                    </span>
+                </div>
+
+                <!-- Dynamic VA Exact Amount Transfer Notice -->
+                <div t-if="isDynamic and !state.isExpired" 
+                     class="d-flex align-items-center justify-content-between p-2 px-3 mb-3 rounded-3"
+                     style="background: #FFFBEB; border: 1.5px solid #FCD34D; color: #92400E;">
+                    <span class="fw-bold" style="font-size: 0.72rem; line-height: 1.35;">
+                        <i class="fa fa-exclamation-triangle me-1" style="color: #D97706;"/>
+                        Please ensure the customer transfers the <strong>exact amount (<t t-esc="expectedAmountFormatted"/>)</strong> to this account.
                     </span>
                 </div>
 
