@@ -138,10 +138,10 @@ class SeerbitVaTransaction(models.Model):
     )
     raw_payload = fields.Text(string="Raw Webhook Payload")
 
-    _seerbit_reference_unique = models.Constraint(
-        'unique(reference)',
-        "The SeerBit transaction reference must be unique to prevent duplicate processing."
-    )
+    _sql_constraints = [
+        ('seerbit_reference_unique', 'unique(reference)',
+         "The SeerBit transaction reference must be unique to prevent duplicate processing."),
+    ]
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -191,7 +191,6 @@ class SeerbitVaTransaction(models.Model):
             if existing:
                 if payer_name and payer_name != 'Bank Customer' and existing.payer_name == 'Bank Customer':
                     existing.write({'payer_name': payer_name})
-                # If an existing payment line references this, link it, but NEVER re-broadcast old notifications
                 if existing.matching_status == 'unmatched' and va.va_type in ('pos_static', 'pos_dynamic'):
                     payment = self.env['pos.payment'].search([
                         '|',
@@ -318,7 +317,7 @@ class SeerbitVaTransaction(models.Model):
 
         domain = [
             ('status', '=', 'successful'),
-            ('matching_status', 'in', ['unmatched', 'transferred']),
+            ('matching_status', '=', 'unmatched'),
         ]
 
         if va.exists() and acc_num:

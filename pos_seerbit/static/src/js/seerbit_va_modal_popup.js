@@ -666,6 +666,8 @@ export class SeerbitVaModalPopup extends Component {
                     { type: "success" }
                 );
                 this.closeTransferModal();
+                this.state.payments = this.state.payments.filter((p) => p.id !== payment.id);
+                this.state.unmatchedCount = this.state.payments.length;
                 await this.fetchPayments();
             } else {
                 this.notification.add(res.error || _t("Failed to transfer payment to till."), { type: "danger" });
@@ -711,16 +713,18 @@ export class SeerbitVaModalPopup extends Component {
             const payerToDisplay = data.payer_name || line.seerbit_payer_name || 'N/A';
             if (refToDisplay && (!line.ticket || !line.ticket.includes(refToDisplay))) {
                 const receiptText = `\nBank Transfer Ref: ${refToDisplay}\nPayer: ${payerToDisplay}`;
-                if (line.setReceiptInfo) {
+                if (line.set_receipt_info) {
+                    line.set_receipt_info(receiptText);
+                } else if (line.setReceiptInfo) {
                     line.setReceiptInfo(receiptText);
                 } else {
                     line.ticket = (line.ticket || '') + receiptText;
                 }
             }
-            if (line.setPaymentStatus) {
-                line.setPaymentStatus("done");
-            } else if (line.set_payment_status) {
+            if (line.set_payment_status) {
                 line.set_payment_status("done");
+            } else if (line.setPaymentStatus) {
+                line.setPaymentStatus("done");
             }
         }
 

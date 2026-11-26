@@ -462,11 +462,11 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertTrue(pm.seerbit_va_id)
             self.assertEqual(pm.seerbit_va_account_number, '7788990011')
             self.assertEqual(pm.seerbit_va_bank_name, 'Providus Bank')
-            # Verify call args had fullName with name + ID, and slugified fallback email without '+'
+            # Verify call args had fullName with name + ID, and slugified fallback email with random prefix without '+'
             called_kwargs = mock_create.call_args[1]
             self.assertIn('Till Transfer 1', called_kwargs['full_name'])
             self.assertIn(f'Till {pm.id}', called_kwargs['full_name'])
-            self.assertTrue(called_kwargs['email'].startswith('till_transfer_1_pm'))
+            self.assertIn('_till_transfer_1_pm', called_kwargs['email'])
             self.assertTrue(called_kwargs['email'].endswith('@pos.seerbit.com'))
             self.assertNotIn('+', called_kwargs['email'])
 
@@ -622,7 +622,7 @@ class TestPosVirtualAccount(SeerbitCommon):
             dyn_email = mock_create.call_args.kwargs['customer_email']
             self.assertIn("@", dyn_email)
             self.assertNotIn("+", dyn_email)
-            self.assertTrue(dyn_email.startswith("dynamic_method_pos_dyn_pos_001_"))
+            self.assertIn("_dynamic_method_pos_dyn_pos_001_", dyn_email)
 
             # Ensure the dynamic VA was saved in seerbit.virtual.account with va_type='pos_dynamic'
             va = self.env['seerbit.virtual.account'].browse(res['va_id'])
@@ -809,11 +809,9 @@ class TestPosVirtualAccount(SeerbitCommon):
         self.assertTrue(dest_tx.is_transferred_in)
         self.assertEqual(dest_tx.transferred_from_tx_id.id, tx1.id)
 
-        # 3. get_unmatched_payments_for_pos on Till 1 returns it as 'transferred'
+        # 3. get_unmatched_payments_for_pos on Till 1 immediately hides the transferred payment
         payments_till1 = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va1.id)
-        p1 = [p for p in payments_till1 if p['id'] == tx1.id][0]
-        self.assertEqual(p1['matching_status'], 'transferred')
-        self.assertEqual(p1['transferred_to_config_name'], till2.name)
+        self.assertFalse([p for p in payments_till1 if p['id'] == tx1.id], "Transferred payment must be immediately hidden from source till payment list")
 
         # 4. get_unmatched_payments_for_pos on Till 2 returns it as active unmatched
         payments_till2 = self.env['seerbit.va.transaction'].get_unmatched_payments_for_pos(va2.id)
