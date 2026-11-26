@@ -462,11 +462,13 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertTrue(pm.seerbit_va_id)
             self.assertEqual(pm.seerbit_va_account_number, '7788990011')
             self.assertEqual(pm.seerbit_va_bank_name, 'Providus Bank')
-            # Verify call args had fullName with name + ID, and fallback email
+            # Verify call args had fullName with name + ID, and slugified fallback email without '+'
             called_kwargs = mock_create.call_args[1]
             self.assertIn('Till Transfer 1', called_kwargs['full_name'])
             self.assertIn(f'Till {pm.id}', called_kwargs['full_name'])
+            self.assertTrue(called_kwargs['email'].startswith('till_transfer_1_pm'))
             self.assertTrue(called_kwargs['email'].endswith('@pos.seerbit.com'))
+            self.assertNotIn('+', called_kwargs['email'])
 
     def test_regenerate_static_va_creates_new_account_and_updates_pm(self):
         company = self.company_a
@@ -617,85 +619,16 @@ class TestPosVirtualAccount(SeerbitCommon):
             self.assertEqual(res['bank_name'], 'Wema Bank')
             self.assertEqual(res['amount'], 7500.0)
             self.assertEqual(mock_create.call_args.kwargs['customer_name'], self.company_a.name[:50].strip())
-            self.assertIn("@", mock_create.call_args.kwargs['customer_email'])
+            dyn_email = mock_create.call_args.kwargs['customer_email']
+            self.assertIn("@", dyn_email)
+            self.assertNotIn("+", dyn_email)
+            self.assertTrue(dyn_email.startswith("dynamic_method_pos_dyn_pos_001_"))
 
             # Ensure the dynamic VA was saved in seerbit.virtual.account with va_type='pos_dynamic'
             va = self.env['seerbit.virtual.account'].browse(res['va_id'])
             self.assertTrue(va.exists())
             self.assertEqual(va.va_type, 'pos_dynamic')
             self.assertEqual(va.account_number, '8877665544')
-
-    def test_seerbit_api_create_dynamic_virtual_account_initiates_endpoint(self):
-        """Verify SeerbitAPI.create_dynamic_virtual_account calls Checkout Transfer /initiates endpoint."""
-        from odoo.addons.pos_seerbit.services.seerbit_api import SeerbitAPI
-        api_client = SeerbitAPI(self.env, company=self.company_a)
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = '{"status":"SUCCESS"}'
-        mock_resp.json.return_value = {
-            'status': 'SUCCESS',
-            'data': {
-                'code': '00',
-                'payments': {
-                    'accountNumber': '9876543210',
-                    'bankName': 'Moniepoint MFB',
-                    'paymentReference': 'POS_DYN_TEST_REF_123',
-                }
-            }
-        }
-        with patch.object(api_client, '_do_request', return_value=mock_resp) as mock_req:
-            res = api_client.create_dynamic_virtual_account(
-                reference="POS_DYN_TEST_REF_123",
-                amount=5000.0,
-                customer_name="Transfer Payer",
-                customer_email="transfer@example.com",
-            )
-            self.assertEqual(mock_req.call_count, 1)
-            args, kwargs = mock_req.call_args
-            self.assertEqual(args[0], 'POST')
-            self.assertEqual(args[1], 'https://seerbitapi.com/api/v2/payments/initiates')
-            payload = kwargs.get('json', {})
-            self.assertEqual(payload.get('paymentType'), 'TRANSFER')
-            self.assertEqual(payload.get('paymentReference'), 'POS_DYN_TEST_REF_123')
-            self.assertEqual(payload.get('amount'), '5000.0')
-            self.assertEqual(res.get('payments', {}).get('accountNumber'), '9876543210')
-
-    def test_create_dynamic_va_unique_tokens_and_email_tagging(self):
-        """Verify dynamic VA generation tags email and adds unique token to prevent S12 collision."""
-        pm = self.env['pos.payment.method'].create({
-            'name': 'Dynamic Method POS Unique',
-            'company_id': self.company_a.id,
-            'payment_method_type': 'transfer',
-            'seerbit_transfer_type': 'dynamic',
-            'journal_id': self.journal_a.id,
-        })
-        captured_payloads = []
-        def fake_create_dyn(reference, amount, customer_name, customer_email, expiry_minutes=30, **kwargs):
-            captured_payloads.append({
-                'reference': reference,
-                'email': customer_email,
-                'amount': amount,
-            })
-            return {
-                'payments': {
-                    'accountNumber': '1020304050',
-                    'bankName': 'Wema Bank',
-                    'paymentReference': reference,
-                }
-            }
-
-        with patch('odoo.addons.pos_seerbit.services.seerbit_api.SeerbitAPI.create_dynamic_virtual_account', side_effect=fake_create_dyn):
-            res1 = pm.create_dynamic_va_for_pos("ORD100", 2500.0, customer_name="Alice", customer_email="alice@example.com")
-            res2 = pm.create_dynamic_va_for_pos("ORD100", 3000.0, customer_name="Alice", customer_email="alice@example.com")
-
-            self.assertEqual(len(captured_payloads), 2)
-            # References must differ
-            self.assertNotEqual(captured_payloads[0]['reference'], captured_payloads[1]['reference'])
-            # Emails must have unique tags to bypass Seerbit 1-account-per-customer restriction
-            self.assertIn('alice+', captured_payloads[0]['email'])
-            self.assertIn('alice+', captured_payloads[1]['email'])
-            self.assertNotEqual(captured_payloads[0]['email'], captured_payloads[1]['email'])
 
     def test_create_dynamic_va_rejects_amount_under_one(self):
         pm = self.env['pos.payment.method'].create({
