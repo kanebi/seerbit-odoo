@@ -58,6 +58,12 @@ export class SeerbitVaModalPopup extends Component {
             settledAmount: 0,
             currentExpectedAmount: this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0,
             matchedTransactions: [],
+            // Multi-Till Payment Tabs & Filter
+            activePaymentTab: "till", // 'till' | 'all'
+            selectedTillPmFilter: null,
+            allPayments: [],
+            tillPms: [],
+            loadingAllPayments: false,
         });
 
         this.countdownInterval = null;
@@ -272,12 +278,52 @@ export class SeerbitVaModalPopup extends Component {
 
     get filteredPayments() {
         const query = this.state.paymentsSearchQuery.toLowerCase().trim();
-        if (!query) return this.state.payments;
-        return this.state.payments.filter((p) =>
+        let list = [];
+        if (this.state.activePaymentTab === "till") {
+            list = this.state.payments;
+        } else {
+            list = this.state.allPayments;
+            if (this.state.selectedTillPmFilter !== null) {
+                list = list.filter((p) => p.till_pm_id === this.state.selectedTillPmFilter);
+            }
+        }
+        if (!query) return list;
+        return list.filter((p) =>
             (p.payer_name && p.payer_name.toLowerCase().includes(query)) ||
             (p.reference && p.reference.toLowerCase().includes(query)) ||
+            (p.till_label && p.till_label.toLowerCase().includes(query)) ||
             (String(p.amount).includes(query))
         );
+    }
+
+    async setPaymentTab(tab) {
+        this.state.activePaymentTab = tab;
+        if (tab === "all") {
+            await this.fetchAllPayments();
+        }
+    }
+
+    filterByTillPm(pmId) {
+        this.state.selectedTillPmFilter = pmId;
+    }
+
+    async fetchAllPayments() {
+        this.state.loadingAllPayments = true;
+        try {
+            const currentConfigId = this.pos?.config?.id || null;
+            const res = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_all_unmatched_payments_for_pos",
+                [],
+                { current_config_id: currentConfigId, limit: 100 }
+            );
+            this.state.tillPms = res.till_pms || [];
+            this.state.allPayments = res.payments || [];
+        } catch (err) {
+            console.error("Failed to fetch all unmatched payments:", err);
+        } finally {
+            this.state.loadingAllPayments = false;
+        }
     }
 
     formatAmount(amount) {
@@ -583,11 +629,13 @@ export class SeerbitVaModalPopup extends Component {
 
     async selectPayment(payment) {
         const amountFormatted = this.formatAmount(payment.amount);
+        const isFromOtherTill = payment.till_label && !payment.is_current_till;
+        const confirmMsg = isFromOtherTill
+            ? _t(`Confirm payment of ${amountFormatted} from "${payment.payer_name}" (Auto-transfers from ${payment.till_label})?`)
+            : _t(`Confirm payment of ${amountFormatted} from "${payment.payer_name}"?`);
         this.dialog.add(ConfirmationDialog, {
             title: _t("Confirm Payment"),
-            body: _t(
-                `Confirm payment of ${amountFormatted} from "${payment.payer_name}"?`
-            ),
+            body: confirmMsg,
             confirm: async () => {
                 await this._executePaymentSelection(payment);
             },
@@ -599,10 +647,11 @@ export class SeerbitVaModalPopup extends Component {
         try {
             const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
             const orderUuid = order?.uuid || order?.pos_reference || order?.name || String(order?.id);
+            const currentConfigId = this.pos?.config?.id || null;
             const res = await this.orm.call(
                 "seerbit.va.transaction",
                 "match_payment_to_pos_order_atomic",
-                [payment.id, orderUuid, false, "manual_matched"]
+                [payment.id, orderUuid, false, "manual_matched", currentConfigId]
             );
             if (res.success) {
                 const payAmt = Number(payment.amount);
@@ -633,6 +682,9 @@ export class SeerbitVaModalPopup extends Component {
 
                     // Keep modal open and refresh list
                     await this.fetchPayments();
+                    if (this.state.activePaymentTab === "all") {
+                        await this.fetchAllPayments();
+                    }
                 } else {
                     // Full or completing payment matched!
                     this.state.settledAmount += payAmt;
@@ -648,6 +700,9 @@ export class SeerbitVaModalPopup extends Component {
             } else {
                 this.notification.add(res.error || _t("Payment selection failed."), { type: "danger" });
                 await this.fetchPayments();
+                if (this.state.activePaymentTab === "all") {
+                    await this.fetchAllPayments();
+                }
             }
         } catch (err) {
             this.notification.add(_t("Error matching payment: ") + (err.message || err), { type: "danger" });

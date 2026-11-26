@@ -42,6 +42,12 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             settledAmount: 0,
             currentExpectedAmount: this.props.expectedAmount || 0,
             matchedTransactions: [],
+            // Multi-Till Payment Tabs & Filter
+            activePaymentTab: "till", // 'till' | 'all'
+            selectedTillPmFilter: null,
+            allPayments: [],
+            tillPms: [],
+            loadingAllPayments: false,
         });
 
         this.unsubscribeBus = null;
@@ -102,12 +108,52 @@ export class SeerbitIncomingPaymentsPopup extends Component {
 
     get filteredPayments() {
         const query = this.state.searchQuery.toLowerCase().trim();
-        if (!query) return this.state.payments;
-        return this.state.payments.filter((p) =>
+        let list = [];
+        if (this.state.activePaymentTab === "till") {
+            list = this.state.payments;
+        } else {
+            list = this.state.allPayments;
+            if (this.state.selectedTillPmFilter !== null) {
+                list = list.filter((p) => p.till_pm_id === this.state.selectedTillPmFilter);
+            }
+        }
+        if (!query) return list;
+        return list.filter((p) =>
             (p.payer_name && p.payer_name.toLowerCase().includes(query)) ||
             (p.reference && p.reference.toLowerCase().includes(query)) ||
+            (p.till_label && p.till_label.toLowerCase().includes(query)) ||
             (String(p.amount).includes(query))
         );
+    }
+
+    async setPaymentTab(tab) {
+        this.state.activePaymentTab = tab;
+        if (tab === "all") {
+            await this.fetchAllPayments();
+        }
+    }
+
+    filterByTillPm(pmId) {
+        this.state.selectedTillPmFilter = pmId;
+    }
+
+    async fetchAllPayments() {
+        this.state.loadingAllPayments = true;
+        try {
+            const currentConfigId = this.props.order?.config_id?.id || this.props.paymentLine?.pos?.config?.id || null;
+            const res = await this.orm.call(
+                "seerbit.va.transaction",
+                "get_all_unmatched_payments_for_pos",
+                [],
+                { current_config_id: currentConfigId, limit: 100 }
+            );
+            this.state.tillPms = res.till_pms || [];
+            this.state.allPayments = res.payments || [];
+        } catch (err) {
+            console.error("Failed to fetch all unmatched payments:", err);
+        } finally {
+            this.state.loadingAllPayments = false;
+        }
     }
 
     formatAmount(amount) {
@@ -163,6 +209,9 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         this.state.syncing = true;
         // 1. Immediately fetch from local Odoo DB first (sub-50ms)
         await this.fetchPayments();
+        if (this.state.activePaymentTab === "all") {
+            await this.fetchAllPayments();
+        }
         try {
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("SeerBit live sync timed out after 8s")), 8000)
@@ -176,10 +225,16 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                 timeoutPromise,
             ]);
             await this.fetchPayments();
+            if (this.state.activePaymentTab === "all") {
+                await this.fetchAllPayments();
+            }
             this.notification.add(_t("Payments refreshed!"), { type: "success" });
         } catch (err) {
             console.warn("Live SeerBit refresh warning:", err);
             await this.fetchPayments();
+            if (this.state.activePaymentTab === "all") {
+                await this.fetchAllPayments();
+            }
             const errMsg = err?.data?.message || err?.message || String(err);
             this.notification.add(_t("Could not refresh live from Seerbit: ") + errMsg, { type: "warning" });
         } finally {
@@ -317,11 +372,13 @@ export class SeerbitIncomingPaymentsPopup extends Component {
 
     async selectPayment(payment) {
         const amountFormatted = this.formatAmount(payment.amount);
+        const isFromOtherTill = payment.till_label && !payment.is_current_till;
+        const confirmMsg = isFromOtherTill
+            ? _t(`Confirm payment of ${amountFormatted} from "${payment.payer_name}" (Auto-transfers from ${payment.till_label})?`)
+            : _t(`Confirm payment of ${amountFormatted} from "${payment.payer_name}"?`);
         this.dialog.add(ConfirmationDialog, {
             title: _t("Confirm Payment"),
-            body: _t(
-                `Confirm payment of ${amountFormatted} from "${payment.payer_name}"?`
-            ),
+            body: confirmMsg,
             confirm: async () => {
                 await this._executePaymentSelection(payment);
             },
@@ -332,10 +389,11 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     async _executePaymentSelection(payment) {
         try {
             const orderUuid = this.props.order?.uuid || this.props.order?.pos_reference || this.props.order?.name || String(this.props.order?.id);
+            const currentConfigId = this.props.order?.config_id?.id || this.props.paymentLine?.pos?.config?.id || null;
             const res = await this.orm.call(
                 "seerbit.va.transaction",
                 "match_payment_to_pos_order_atomic",
-                [payment.id, orderUuid, false, "manual_matched"]
+                [payment.id, orderUuid, false, "manual_matched", currentConfigId]
             );
             if (res.success) {
                 const payAmt = Number(payment.amount);
@@ -364,8 +422,11 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                         { type: "info" }
                     );
 
-                    // Keep modal open and refresh list
+                    // Keep modal open and refresh lists
                     await this.fetchPayments();
+                    if (this.state.activePaymentTab === "all") {
+                        await this.fetchAllPayments();
+                    }
                 } else {
                     // Full or completing payment matched!
                     this.state.settledAmount += payAmt;
@@ -382,6 +443,9 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             } else {
                 this.notification.add(res.error || _t("Payment selection failed."), { type: "danger" });
                 await this.fetchPayments();
+                if (this.state.activePaymentTab === "all") {
+                    await this.fetchAllPayments();
+                }
             }
         } catch (err) {
             this.notification.add(_t("Error matching payment: ") + (err.message || err), { type: "danger" });

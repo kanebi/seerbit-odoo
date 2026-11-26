@@ -955,5 +955,100 @@ class TestPosVirtualAccount(SeerbitCommon):
         ])
         self.assertEqual(len(remaining_unmatched), 0)
 
+    def test_get_all_unmatched_payments_and_cross_till_auto_transfer_matching(self):
+        """
+        Tests:
+        1. get_all_unmatched_payments_for_pos returns static till PMs and payments with till labels.
+        2. match_payment_to_pos_order_atomic with target_config_id automatically transfers the
+           payment from source till to target till, records source till notes, and matches destination tx.
+        """
+        # Create 2 configs in company_a
+        cfg1 = self.env['pos.config'].create({
+            'name': 'Till Alpha',
+            'company_id': self.company_a.id,
+        })
+        cfg2 = self.env['pos.config'].create({
+            'name': 'Till Beta',
+            'company_id': self.company_a.id,
+        })
+        va1 = self.env['seerbit.virtual.account'].create({
+            'name': 'VA Till Alpha',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_static',
+            'account_number': '1110001110',
+            'reference': 'VA_ALPHA_REF',
+        })
+        va2 = self.env['seerbit.virtual.account'].create({
+            'name': 'VA Till Beta',
+            'company_id': self.company_a.id,
+            'va_type': 'pos_static',
+            'account_number': '2220002220',
+            'reference': 'VA_BETA_REF',
+        })
+        pm1 = self.env['pos.payment.method'].create({
+            'name': 'Seerbit Transfer Alpha',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+            'seerbit_va_id': va1.id,
+        })
+        pm2 = self.env['pos.payment.method'].create({
+            'name': 'Seerbit Transfer Beta',
+            'company_id': self.company_a.id,
+            'payment_method_type': 'transfer',
+            'seerbit_transfer_type': 'static',
+            'seerbit_va_id': va2.id,
+        })
+        cfg1.payment_method_ids = [(6, 0, [pm1.id])]
+        cfg2.payment_method_ids = [(6, 0, [pm2.id])]
+
+        # Create incoming transaction on Till Alpha
+        tx_alpha = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_ALPHA_01',
+            'va_id': va1.id,
+            'reference': 'REF_ALPHA_001',
+            'amount': 2500.0,
+            'payer_name': 'Alpha Customer',
+            'matching_status': 'unmatched',
+            'status': 'successful',
+        })
+
+        # Test get_all_unmatched_payments_for_pos from Till Beta
+        all_res = self.env['seerbit.va.transaction'].get_all_unmatched_payments_for_pos(current_config_id=cfg2.id)
+        self.assertTrue(len(all_res['till_pms']) >= 2)
+        found_alpha_pm = next((p for p in all_res['till_pms'] if p['id'] == pm1.id), None)
+        self.assertIsNotNone(found_alpha_pm)
+        self.assertEqual(found_alpha_pm['config_name'], 'Till Alpha')
+        self.assertFalse(found_alpha_pm['is_current_till'])
+
+        found_tx = next((p for p in all_res['payments'] if p['id'] == tx_alpha.id), None)
+        self.assertIsNotNone(found_tx)
+        self.assertEqual(found_tx['till_label'], 'Till Alpha: Seerbit Transfer Alpha')
+        self.assertFalse(found_tx['is_current_till'])
+
+        # Cross-till match from Till Beta
+        res_cross = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            transaction_id=tx_alpha.id,
+            pos_order_uuid='ORDER_BETA_1001',
+            target_config_id=cfg2.id,
+        )
+        self.assertTrue(res_cross['success'])
+        self.assertTrue(res_cross.get('is_transferred'))
+        self.assertIn('Till Alpha', res_cross.get('source_till_pm', ''))
+
+        # Check source transaction status and notes
+        tx_alpha.invalidate_recordset()
+        self.assertEqual(tx_alpha.matching_status, 'transferred')
+        self.assertEqual(tx_alpha.transferred_to_config_id.id, cfg2.id)
+        self.assertIn('Till Beta', tx_alpha.notes or '')
+
+        # Check destination transaction
+        dest_tx = self.env['seerbit.va.transaction'].browse(res_cross['transaction_id'])
+        self.assertEqual(dest_tx.matching_status, 'manual_matched')
+        self.assertEqual(dest_tx.pos_order_ref, 'ORDER_BETA_1001')
+        self.assertEqual(dest_tx.va_id.id, va2.id)
+        self.assertIn('Till Alpha: Seerbit Transfer Alpha', dest_tx.notes or '')
+
+
 
 
