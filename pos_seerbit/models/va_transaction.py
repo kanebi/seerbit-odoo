@@ -136,6 +136,7 @@ class SeerbitVaTransaction(models.Model):
         string="Matched At",
         readonly=True
     )
+    notes = fields.Text(string="Notes / Transfer Info")
     raw_payload = fields.Text(string="Raw Webhook Payload")
 
     _sql_constraints = [
@@ -431,6 +432,10 @@ class SeerbitVaTransaction(models.Model):
         # Unique reference for transferred destination transaction
         dest_ref = f"{source_tx.reference}_TRF_{target_config.id}"
         dest_tx = self.sudo().search([('reference', '=', dest_ref)], limit=1)
+        source_pm = self.env['pos.payment.method'].sudo().search([('seerbit_va_id', '=', source_tx.va_id.id)], limit=1)
+        source_cfg = self.env['pos.config'].sudo().search([('payment_method_ids', 'in', source_pm.id)], limit=1) if source_pm else False
+        source_info = f"{source_cfg.name}: {source_pm.name}" if (source_cfg and source_pm) else (source_cfg.name if source_cfg else (source_tx.company_id.name or "Another Till"))
+
         if not dest_tx:
             dest_tx = self.sudo().create({
                 'name': self.env['ir.sequence'].next_by_code('seerbit.va.transaction') or dest_ref,
@@ -444,6 +449,11 @@ class SeerbitVaTransaction(models.Model):
                 'is_transferred_in': True,
                 'transferred_from_tx_id': source_tx.id,
                 'raw_payload': source_tx.raw_payload,
+                'notes': f"Transferred from {source_info} (Source Ref: {source_tx.reference})",
+            })
+        else:
+            dest_tx.write({
+                'notes': f"Transferred from {source_info} (Source Ref: {source_tx.reference})",
             })
 
         # Update source transaction
@@ -452,6 +462,7 @@ class SeerbitVaTransaction(models.Model):
             'transferred_to_config_id': target_config.id,
             'transferred_to_va_id': target_va.id,
             'transferred_to_tx_id': dest_tx.id,
+            'notes': f"Transferred to {target_config.name}: {target_pm.name or ''} (Dest Ref: {dest_ref})",
         })
 
         # Realtime Bus Dispatch to target open session(s)
@@ -469,7 +480,7 @@ class SeerbitVaTransaction(models.Model):
                     'payer_name': dest_tx.payer_name,
                     'account_number': target_va.account_number,
                     'is_transferred': True,
-                    'from_till': source_tx.company_id.name or "Another Till",
+                    'from_till': source_info,
                     'payment_date': fields.Datetime.to_string(dest_tx.payment_date),
                 }
             )
@@ -482,12 +493,130 @@ class SeerbitVaTransaction(models.Model):
         }
 
     @api.model
-    def match_payment_to_pos_order_atomic(self, transaction_id, pos_order_uuid, cashier_user_id=None, matching_status='manual_matched'):
+    def get_all_unmatched_payments_for_pos(self, current_config_id=None, limit=100):
+        """
+        RPC method for POS Cashier to view unmatched payments across all tills (current till + other tills).
+        Returns:
+          - 'till_pms': list of static payment methods across all tills with POS point/till name
+          - 'payments': unmatched payments across all static VAs with till/PM metadata
+        """
+        current_config = self.env['pos.config'].sudo().browse(current_config_id) if current_config_id else None
+        company_id = current_config.company_id.id if current_config else self.env.company.id
+
+        configs = self.env['pos.config'].sudo().search([('company_id', '=', company_id)])
+        till_pms = []
+        seen_pm_ids = set()
+
+        for cfg in configs:
+            static_pms = cfg.payment_method_ids.filtered(
+                lambda m: m.payment_method_type == 'transfer' and m.seerbit_transfer_type == 'static' and m.seerbit_va_id
+            )
+            for pm in static_pms:
+                seen_pm_ids.add(pm.id)
+                till_pms.append({
+                    'id': pm.id,
+                    'config_id': cfg.id,
+                    'config_name': cfg.name,
+                    'pm_name': pm.name,
+                    'label': f"{cfg.name}: {pm.name}",
+                    'account_number': pm.seerbit_va_id.account_number,
+                    'va_id': pm.seerbit_va_id.id,
+                    'is_current_till': bool(current_config_id and cfg.id == current_config_id),
+                })
+
+        other_pms = self.env['pos.payment.method'].sudo().search([
+            ('company_id', '=', company_id),
+            ('payment_method_type', '=', 'transfer'),
+            ('seerbit_transfer_type', '=', 'static'),
+            ('seerbit_va_id', '!=', False),
+            ('id', 'not in', list(seen_pm_ids)),
+        ])
+        for pm in other_pms:
+            till_pms.append({
+                'id': pm.id,
+                'config_id': False,
+                'config_name': 'Company Static',
+                'pm_name': pm.name,
+                'label': f"{pm.name} ({pm.seerbit_va_account_number or 'VA'})",
+                'account_number': pm.seerbit_va_id.account_number,
+                'va_id': pm.seerbit_va_id.id,
+                'is_current_till': False,
+            })
+
+        all_va_ids = [item['va_id'] for item in till_pms if item.get('va_id')]
+        all_acc_nums = [item['account_number'] for item in till_pms if item.get('account_number')]
+
+        if not all_va_ids and not all_acc_nums:
+            return {'till_pms': [], 'payments': []}
+
+        cutoff_dt = fields.Datetime.now() - datetime.timedelta(days=7)
+        domain = [
+            ('status', '=', 'successful'),
+            ('matching_status', '=', 'unmatched'),
+            ('payment_date', '>=', fields.Datetime.to_string(cutoff_dt)),
+            '|',
+            ('va_id', 'in', all_va_ids),
+            ('account_number', 'in', all_acc_nums),
+        ]
+
+        records = self.sudo().search_read(
+            domain=domain,
+            fields=[
+                'id', 'reference', 'payer_name', 'amount', 'payment_date',
+                'status', 'matching_status', 'va_id', 'account_number',
+                'transferred_to_config_id', 'is_transferred_in', 'notes'
+            ],
+            limit=limit,
+            order='payment_date desc'
+        )
+
+        from collections import Counter
+        unmatched_amounts = Counter(
+            round(float(r.get('amount') or 0.0), 2)
+            for r in records
+            if r.get('matching_status') == 'unmatched'
+        )
+
+        va_map = {item['va_id']: item for item in till_pms if item.get('va_id')}
+        acc_map = {item['account_number']: item for item in till_pms if item.get('account_number')}
+
+        for rec in records:
+            if isinstance(rec.get('payment_date'), (datetime.datetime, datetime.date)):
+                rec['payment_date'] = fields.Datetime.to_string(rec['payment_date'])
+            rec['transferred_to_config_name'] = rec['transferred_to_config_id'][1] if rec.get('transferred_to_config_id') else False
+            
+            v_id = rec.get('va_id')[0] if isinstance(rec.get('va_id'), (list, tuple)) else rec.get('va_id')
+            a_num = rec.get('account_number')
+            till_info = va_map.get(v_id) or acc_map.get(a_num)
+            if till_info:
+                rec['till_pm_id'] = till_info['id']
+                rec['till_config_id'] = till_info['config_id']
+                rec['till_label'] = till_info['label']
+                rec['is_current_till'] = till_info['is_current_till']
+            else:
+                rec['till_pm_id'] = False
+                rec['till_config_id'] = False
+                rec['till_label'] = "Other Till"
+                rec['is_current_till'] = False
+
+            amt = round(float(rec.get('amount') or 0.0), 2)
+            rec['has_duplicate_amount'] = (unmatched_amounts[amt] > 1) if rec.get('matching_status') == 'unmatched' else False
+
+        return {
+            'till_pms': till_pms,
+            'payments': records,
+        }
+
+    @api.model
+    def match_payment_to_pos_order_atomic(self, transaction_id, pos_order_uuid, cashier_user_id=None, matching_status='manual_matched', target_config_id=None):
         """
         Atomic matching with database row-level lock (SELECT ... FOR UPDATE).
         Prevents race conditions when two cashiers attempt to select the same payment simultaneously.
+        If target_config_id is provided and the payment originated from another till,
+        it automatically transfers the transaction to target_config_id, records source till notes,
+        marks the source as transferred, and matches the destination transaction atomically.
         """
-        self.sudo().flush_model(['matching_status', 'pos_order_ref', 'matched_by_user_id', 'matched_at'])
+        self.sudo().flush_model(['matching_status', 'pos_order_ref', 'matched_by_user_id', 'matched_at', 'notes'])
         try:
             self.env.cr.execute(
                 "SELECT id, matching_status, amount, reference, payer_name "
@@ -506,8 +635,8 @@ class SeerbitVaTransaction(models.Model):
             return {'success': False, 'error': _("Transaction not found.")}
 
         tx_id, current_status, amount, reference, payer_name = row
+        record = self.sudo().browse(tx_id)
         if current_status != 'unmatched':
-            record = self.sudo().browse(tx_id)
             if record.pos_order_ref == pos_order_uuid and current_status in ('auto_matched', 'manual_matched'):
                 return {
                     'success': True,
@@ -524,7 +653,73 @@ class SeerbitVaTransaction(models.Model):
 
         now = fields.Datetime.now()
         user_id = cashier_user_id or self.env.uid
-        record = self.sudo().browse(tx_id)
+
+        # Auto-transfer if payment is from another till
+        target_config = self.env['pos.config'].sudo().browse(target_config_id) if target_config_id else None
+        if target_config and target_config.exists():
+            source_va = record.va_id
+            source_pm = self.env['pos.payment.method'].sudo().search([('seerbit_va_id', '=', source_va.id)], limit=1)
+            source_cfg = self.env['pos.config'].sudo().search([('payment_method_ids', 'in', source_pm.id)], limit=1) if source_pm else False
+            source_info = f"{source_cfg.name}: {source_pm.name}" if (source_cfg and source_pm) else (source_cfg.name if source_cfg else (record.company_id.name or "Another Till"))
+
+            # Check if this transaction actually belongs to a different till
+            if source_cfg and source_cfg.id != target_config.id:
+                target_pm = target_config.payment_method_ids.filtered(
+                    lambda m: m.payment_method_type == 'transfer' and m.seerbit_va_id
+                )[:1]
+                target_va = target_pm.seerbit_va_id if target_pm else source_va
+                dest_ref = f"{record.reference}_TRF_{target_config.id}"
+
+                dest_tx = self.sudo().search([('reference', '=', dest_ref)], limit=1)
+                if not dest_tx:
+                    dest_tx = self.sudo().create({
+                        'name': self.env['ir.sequence'].next_by_code('seerbit.va.transaction') or dest_ref,
+                        'va_id': target_va.id,
+                        'reference': dest_ref,
+                        'amount': record.amount,
+                        'payer_name': record.payer_name,
+                        'payment_date': record.payment_date or now,
+                        'status': 'successful',
+                        'matching_status': matching_status,
+                        'pos_order_ref': pos_order_uuid,
+                        'matched_by_user_id': user_id,
+                        'matched_at': now,
+                        'is_transferred_in': True,
+                        'transferred_from_tx_id': record.id,
+                        'raw_payload': record.raw_payload,
+                        'notes': f"Transferred from {source_info} on match (Source Ref: {record.reference})",
+                    })
+                else:
+                    dest_tx.write({
+                        'matching_status': matching_status,
+                        'pos_order_ref': pos_order_uuid,
+                        'matched_by_user_id': user_id,
+                        'matched_at': now,
+                        'notes': f"Transferred from {source_info} on match (Source Ref: {record.reference})",
+                    })
+
+                record.write({
+                    'matching_status': 'transferred',
+                    'transferred_to_config_id': target_config.id,
+                    'transferred_to_va_id': target_va.id,
+                    'transferred_to_tx_id': dest_tx.id,
+                    'notes': f"Transferred to {target_config.name}: {target_pm.name if target_pm else ''} on match (Dest Ref: {dest_ref})",
+                })
+                record.flush_recordset(['matching_status', 'transferred_to_config_id', 'transferred_to_va_id', 'transferred_to_tx_id', 'notes'])
+                dest_tx.flush_recordset(['matching_status', 'pos_order_ref', 'matched_by_user_id', 'matched_at', 'notes'])
+
+                return {
+                    'success': True,
+                    'transaction_id': dest_tx.id,
+                    'reference': dest_ref,
+                    'amount': dest_tx.amount,
+                    'payer_name': dest_tx.payer_name,
+                    'matched_at': fields.Datetime.to_string(now),
+                    'is_transferred': True,
+                    'source_till_pm': source_info,
+                }
+
+        # Same till (or no target config specified)
         record.write({
             'matching_status': matching_status,
             'pos_order_ref': pos_order_uuid,

@@ -30,6 +30,51 @@
                         </span>
                     </div>
 
+                    <!-- Navigation Tabs: Till Payment (default) vs All Payments -->
+                    <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" 
+                                    t-attf-class="btn fw-bold px-3 py-1 #{state.activePaymentTab === 'till' ? 'btn-primary shadow-sm' : 'btn-outline-secondary'}"
+                                    t-on-click="() => this.setPaymentTab('till')">
+                                <i class="fa fa-desktop me-1"/> Till Payment
+                                <span t-if="state.payments.length" class="badge rounded-pill bg-light text-primary ms-1">
+                                    <t t-esc="state.payments.length"/>
+                                </span>
+                            </button>
+                            <button type="button" 
+                                    t-attf-class="btn fw-bold px-3 py-1 #{state.activePaymentTab === 'all' ? 'btn-primary shadow-sm' : 'btn-outline-secondary'}"
+                                    t-on-click="() => this.setPaymentTab('all')">
+                                <i class="fa fa-cubes me-1"/> All Payments
+                                <span t-if="state.allPayments.length" class="badge rounded-pill bg-light text-primary ms-1">
+                                    <t t-esc="state.allPayments.length"/>
+                                </span>
+                            </button>
+                        </div>
+                        <div t-if="state.activePaymentTab === 'all'" class="small text-muted fst-italic">
+                            Other tills + my till payments
+                        </div>
+                    </div>
+
+                    <!-- Tag-like Filter Buttons of All Static Payment Methods with Till Name -->
+                    <div t-if="state.activePaymentTab === 'all'" class="d-flex flex-wrap align-items-center gap-1 mb-2 p-2 bg-light rounded border">
+                        <span class="small fw-bolder text-muted text-uppercase me-1" style="font-size: 0.72rem;">Till PM:</span>
+                        <button type="button" 
+                                t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === null ? 'btn-dark text-white' : 'btn-outline-secondary bg-white'}"
+                                style="font-size: 0.75rem;"
+                                t-on-click="() => this.filterByTillPm(null)">
+                            All
+                        </button>
+                        <t t-foreach="state.tillPms" t-as="tpm" t-key="tpm.id">
+                            <button type="button" 
+                                    t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === tpm.id ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary bg-white text-dark'}"
+                                    style="font-size: 0.75rem;"
+                                    t-on-click="() => this.filterByTillPm(tpm.id)">
+                                <i class="fa fa-tag me-1 text-muted"/>
+                                <t t-esc="tpm.label"/>
+                            </button>
+                        </t>
+                    </div>
+
                     <!-- Top Summary & Refresh -->
                     <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded border">
                         <div>
@@ -78,6 +123,7 @@
                                 <thead class="table-light sticky-top">
                                     <tr>
                                         <th style="color: #1f2937;">Time</th>
+                                        <th t-if="state.activePaymentTab === 'all'" style="color: #1f2937;">Till / PM</th>
                                         <th style="color: #1f2937;">Sender Name</th>
                                         <th style="color: #1f2937;">Amount</th>
                                         <th style="color: #1f2937;">Reference</th>
@@ -89,6 +135,14 @@
                                     <tr t-foreach="filteredPayments" t-as="p" t-key="p.id"
                                         t-att-class="{'table-secondary opacity-50': p.matching_status === 'transferred', 'table-success': isExactAmount(p.amount) and p.matching_status !== 'transferred'}">
                                         <td class="small fw-semibold" style="color: #374151;"><t t-esc="formatDate(p.payment_date)"/></td>
+                                        <td t-if="state.activePaymentTab === 'all'">
+                                            <span t-if="p.is_current_till" class="badge bg-success text-white small">
+                                                <i class="fa fa-check me-1"/>This Till
+                                            </span>
+                                            <span t-else="" class="badge bg-light text-dark border small fw-semibold" t-att-title="p.till_label">
+                                                <i class="fa fa-desktop me-1 text-muted"/><t t-esc="p.till_label || 'Other Till'"/>
+                                            </span>
+                                        </td>
                                         <td>
                                             <strong class="small text-dark"><t t-esc="p.payer_name"/></strong>
                                             <span t-if="p.is_transferred_in" class="badge bg-info text-dark ms-1 small">
