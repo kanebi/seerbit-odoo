@@ -104,15 +104,6 @@
                         <span class="small fw-bold text-truncate d-block" style="color: #1E293B;" t-att-title="accountName">
                             <t t-esc="accountName"/>
                         </span>
-                        <!-- Dynamic VA Bank Account Name Info Note -->
-                        <div t-if="isDynamic and !state.isExpired" 
-                             class="d-flex align-items-center justify-content-between p-2 mt-1 rounded-3"
-                             style="background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF;">
-                            <span class="fw-semibold" style="font-size: 0.7rem; line-height: 1.25;">
-                                Account name displayed on the bank may not match the account name displayed here.
-                            </span>
-                            <i class="fa fa-info-circle ms-1 flex-shrink-0" style="color: #2563EB; font-size: 0.85rem;"/>
-                        </div>
                     </div>
                 </div>
 
@@ -124,12 +115,12 @@
                     </span>
                 </div>
 
-                <!-- Dynamic VA Exact Amount Transfer Notice -->
+                <!-- Dynamic VA Exact Amount Transfer Notice (Blue Info Style) -->
                 <div t-if="isDynamic and !state.isExpired" 
                      class="d-flex align-items-center justify-content-between p-2 px-3 mb-3 rounded-3"
-                     style="background: #FFFBEB; border: 1.5px solid #FCD34D; color: #92400E;">
-                    <span class="fw-bold" style="font-size: 0.72rem; line-height: 1.35;">
-                        <i class="fa fa-exclamation-triangle me-1" style="color: #D97706;"/>
+                     style="background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E40AF;">
+                    <span class="fw-semibold" style="font-size: 0.72rem; line-height: 1.35;">
+                        <i class="fa fa-info-circle me-1" style="color: #2563EB; font-size: 0.85rem;"/>
                         Please ensure the customer transfers the <strong>exact amount (<t t-esc="expectedAmountFormatted"/>)</strong> to this account.
                     </span>
                 </div>
