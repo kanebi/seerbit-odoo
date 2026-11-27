@@ -226,6 +226,31 @@ patch(PaymentScreen.prototype, {
             });
             return false;
         }
+
+        // Failsafe for overpayment in sessions without a cash payment method:
+        // If session has no cash statement and order has change due from an overpaid transfer line,
+        // cap the transfer line to the order balance so change is 0.0 and Odoo doesn't raise
+        // "No cash statement found for this session. Unable to record returned cash."
+        const hasCash = this.pos.config?.payment_method_ids?.some?.((pm) => pm.is_cash_count);
+        if (!hasCash && this.currentOrder) {
+            const change = this.currentOrder.get_change ? this.currentOrder.get_change() : 0;
+            if (change > 0.001) {
+                const transferLine = this.paymentLines.find(
+                    (l) => l.payment_method_id?.payment_method_type === "transfer" && l.amount > 0
+                );
+                if (transferLine) {
+                    const newAmount = Math.max(0, transferLine.amount - change);
+                    if (transferLine.set_amount) {
+                        transferLine.set_amount(newAmount);
+                    } else if (transferLine.setAmount) {
+                        transferLine.setAmount(newAmount);
+                    } else {
+                        transferLine.amount = newAmount;
+                    }
+                }
+            }
+        }
+
         return super.validateOrder(isForceValidate);
     },
 

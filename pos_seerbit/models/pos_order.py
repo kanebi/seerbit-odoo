@@ -1,3 +1,4 @@
+from odoo.tools import float_is_zero
 # -*- coding: utf-8 -*-
 import datetime
 import logging
@@ -236,3 +237,25 @@ class PosOrder(models.Model):
                     break
         return res
 
+
+    @api.model
+    def _process_payment_lines(self, pos_order, order, pos_session, draft):
+        prec_acc = order.currency_id.decimal_places
+        if not draft and not float_is_zero(pos_order.get('amount_return', 0.0), prec_acc):
+            cash_payment_method = pos_session.payment_method_ids.filtered('is_cash_count')[:1]
+            if not cash_payment_method:
+                # Session has no cash payment method. If this order has any transfer payment,
+                # zero out amount_return so Odoo does not raise UserError("No cash statement found for this session.")
+                transfer_pms = pos_session.payment_method_ids.filtered(lambda m: m.payment_method_type == 'transfer')
+                has_transfer = any(
+                    line[2].get('payment_method_id') in transfer_pms.ids
+                    for line in pos_order.get('lines', [])
+                    if isinstance(line, (list, tuple)) and len(line) > 2 and isinstance(line[2], dict)
+                ) or any(p.payment_method_id.payment_method_type == 'transfer' for p in order.payment_ids)
+                if has_transfer:
+                    _logger.info(
+                        "Session %s has no cash payment method. Adjusting amount_return from %s to 0.0 for order %s to prevent 'No cash statement' UserError.",
+                        pos_session.name, pos_order.get('amount_return'), order.pos_reference or order.name
+                    )
+                    pos_order['amount_return'] = 0.0
+        return super()._process_payment_lines(pos_order, order, pos_session, draft)

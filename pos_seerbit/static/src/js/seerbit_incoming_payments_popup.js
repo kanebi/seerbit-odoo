@@ -467,10 +467,14 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                     }
                 } else {
                     // Full or completing payment matched!
-                    this.state.settledAmount += payAmt;
+                    const amountToSettle = Math.min(payAmt, currentExpected);
+                    const overpaymentAmount = Math.max(0, payAmt - currentExpected);
+
+                    this.state.settledAmount += amountToSettle;
                     this.state.matchedTransactions.push(res);
                     if (line) {
-                        line.seerbit_matched_amount = this.state.settledAmount;
+                        line.seerbit_matched_amount = payAmt;
+                        line.seerbit_overpaid_amount = overpaymentAmount;
                         line.seerbit_is_partially_matched = false;
                         line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
                         line.seerbit_is_matched = true;
@@ -481,6 +485,15 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                         } else {
                             line.amount = this.state.settledAmount;
                         }
+                    }
+                    if (overpaymentAmount > 0.01) {
+                        this.notification.add(
+                            _t("Payment of %s matched with overpayment of %s! Order settled for %s.",
+                               this.formatAmount(payAmt),
+                               this.formatAmount(overpaymentAmount),
+                               this.formatAmount(amountToSettle)),
+                            { type: "warning" }
+                        );
                     }
                     this.props.onPaymentConfirmed(res);
                     this.props.close();
