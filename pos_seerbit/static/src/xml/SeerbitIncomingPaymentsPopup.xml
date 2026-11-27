@@ -23,10 +23,10 @@
                         <div>
                             <i class="fa fa-adjust me-2 text-primary"/>
                             <span class="fw-bold">Partially Matched: <t t-esc="formatAmount(state.settledAmount)"/> settled.</span>
-                            <span class="ms-2">Remaining to match: <strong><t t-esc="formatAmount(expectedAmount)"/></strong></span>
+                            <span class="ms-2">Balance required to complete: <strong><t t-esc="formatAmount(expectedAmount)"/></strong></span>
                         </div>
                         <span class="badge rounded-pill bg-primary text-white px-2 py-1">
-                            Partial (<t t-esc="state.matchedTransactions.length"/>)
+                            Partial<t t-if="lineMatchedCount &gt; 1"> (<t t-esc="lineMatchedCount"/>)</t>
                         </span>
                     </div>
 

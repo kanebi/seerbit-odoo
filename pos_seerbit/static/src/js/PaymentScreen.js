@@ -24,11 +24,35 @@ patch(PaymentScreenPaymentLines.prototype, {
         if (!line || line._seerbit_modal_open) {
             return;
         }
+        const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
+        let balanceRequired = 0;
+        const originalSettled = Number(line.seerbit_matched_amount || 0);
+
+        if (line.seerbit_is_partially_matched) {
+            // Calculate unpaid balance remaining on the order
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+
+            // On open: update line to add balance required so total order tender is accounted for
+            if (balanceRequired > 0.001) {
+                const newAmount = originalSettled + balanceRequired;
+                if (line.set_amount) {
+                    line.set_amount(newAmount);
+                } else if (line.setAmount) {
+                    line.setAmount(newAmount);
+                } else {
+                    line.amount = newAmount;
+                }
+            }
+        }
+
         line._seerbit_modal_open = true;
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
             autoGenerate: Boolean(options.autoGenerate),
+            balanceRequired: balanceRequired,
+            isReopeningPartial: Boolean(line.seerbit_is_partially_matched),
             validateOrder: () => {
                 if (typeof this.pos?.validateOrder === "function") {
                     return this.pos.validateOrder();
@@ -53,13 +77,11 @@ patch(PaymentScreenPaymentLines.prototype, {
     async selectLine(paymentline) {
         await super.selectLine(paymentline);
         if (paymentline?.payment_method_id?.payment_method_type === "transfer") {
-            const isMatched = Boolean(
-                paymentline.seerbit_is_matched ||
-                paymentline.seerbit_va_transaction_id ||
-                paymentline.seerbit_transaction_ref ||
-                paymentline.payment_status === "done"
+            const isFullyMatched = Boolean(
+                !paymentline.seerbit_is_partially_matched &&
+                (paymentline.seerbit_is_matched || paymentline.payment_status === "done")
             );
-            if (!isMatched && !paymentline._seerbit_modal_open) {
+            if (!isFullyMatched && !paymentline._seerbit_modal_open) {
                 this.openSeerbitModal(paymentline);
             }
         }

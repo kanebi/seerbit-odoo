@@ -30,6 +30,16 @@ export class SeerbitVaModalPopup extends Component {
             this.isDynamic
         );
 
+        const line = this.paymentLine;
+        const isReopening = Boolean(this.props.isReopeningPartial || line?.seerbit_is_partially_matched);
+        const settledSoFar = Number(line?.seerbit_matched_amount || 0);
+        let balanceRequired = Number(this.props.balanceRequired || 0);
+        if (isReopening && !balanceRequired) {
+            const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+        }
+
         this.state = useState({
             copied: false,
             generatingDynamicVa: shouldAutoGenerate,
@@ -54,9 +64,11 @@ export class SeerbitVaModalPopup extends Component {
             selectedTargetPmId: null,
             transferringPayment: false,
             // Partial matching state
-            isPartiallyMatched: false,
-            settledAmount: 0,
-            currentExpectedAmount: this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0,
+            isPartiallyMatched: isReopening,
+            settledAmount: settledSoFar,
+            initialSettledAmount: settledSoFar,
+            balanceRequired: balanceRequired,
+            currentExpectedAmount: isReopening ? balanceRequired : (this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0),
             matchedTransactions: [],
             // Multi-Till Payment Tabs & Filter
             activePaymentTab: "till", // 'till' | 'all'
@@ -272,6 +284,10 @@ export class SeerbitVaModalPopup extends Component {
         return this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
     }
 
+    get lineMatchedCount() {
+        return this.paymentLine?.seerbit_matched_count || this.state.matchedTransactions.length || 1;
+    }
+
     get expectedAmountFormatted() {
         return this.env.utils.formatCurrency(this.expectedAmount);
     }
@@ -481,7 +497,12 @@ export class SeerbitVaModalPopup extends Component {
             this._startCountdownTimer();
         } catch (err) {
             console.error("Failed to generate dynamic virtual account:", err);
-            const errorMsg = err.data?.message || err.data?.data?.message || err.message || _t("Failed to generate dynamic Virtual Account.");
+            const errorMsg =
+                err.data?.data?.arguments?.[0] ||
+                err.data?.data?.message ||
+                (err.data?.message && err.data.message !== "Odoo Server Error" ? err.data.message : null) ||
+                err.message ||
+                _t("Failed to generate dynamic Virtual Account.");
             this.state.error = errorMsg;
             this.notification.add(this.state.error, { type: "danger" });
         } finally {
@@ -668,7 +689,7 @@ export class SeerbitVaModalPopup extends Component {
                     if (line) {
                         line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_is_partially_matched = true;
-                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
                         line.seerbit_transaction_ref = res.reference || payment.reference;
                         line.seerbit_payer_name = payment.payer_name;
                         line.transaction_id = res.reference || payment.reference;
@@ -692,8 +713,15 @@ export class SeerbitVaModalPopup extends Component {
                     if (line) {
                         line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_is_partially_matched = false;
-                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
                         line.seerbit_is_matched = true;
+                        if (line.set_amount) {
+                            line.set_amount(this.state.settledAmount);
+                        } else if (line.setAmount) {
+                            line.setAmount(this.state.settledAmount);
+                        } else {
+                            line.amount = this.state.settledAmount;
+                        }
                     }
                     this._onPaymentConfirmed(res);
                 }
@@ -922,22 +950,24 @@ export class SeerbitVaModalPopup extends Component {
         if (this.state.isSuccess) {
             return this._finishSuccess();
         }
-        if (this.state.isPartiallyMatched && this.state.settledAmount > 0) {
-            const line = this.paymentLine;
-            if (line) {
+        const line = this.paymentLine;
+        if (line) {
+            if (line.seerbit_is_partially_matched || this.state.isPartiallyMatched) {
+                const finalSettled = this.state.settledAmount > 0 ? this.state.settledAmount : (line.seerbit_matched_amount || 0);
                 if (line.set_amount) {
-                    line.set_amount(this.state.settledAmount);
+                    line.set_amount(finalSettled);
+                } else if (line.setAmount) {
+                    line.setAmount(finalSettled);
                 } else {
-                    line.amount = this.state.settledAmount;
+                    line.amount = finalSettled;
                 }
-                if (line.set_payment_status) {
-                    line.set_payment_status("done");
-                } else if (line.setPaymentStatus) {
-                    line.setPaymentStatus("done");
-                }
+                line.seerbit_matched_amount = finalSettled;
                 line.seerbit_is_partially_matched = true;
-                line.seerbit_is_matched = true;
-                line.seerbit_matched_count = this.state.matchedTransactions.length;
+                if (line.set_payment_status) {
+                    line.set_payment_status("waiting");
+                } else if (line.setPaymentStatus) {
+                    line.setPaymentStatus("waiting");
+                }
             }
         }
         this._stopCountdownTimer();
