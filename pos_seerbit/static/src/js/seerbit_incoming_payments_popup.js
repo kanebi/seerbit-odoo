@@ -16,7 +16,10 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         vaId: { type: [Number, Array, Object], optional: true },
         accountNumber: { type: String, optional: true },
         expectedAmount: { type: Number, optional: true },
+        balanceRequired: { type: Number, optional: true },
+        isReopeningPartial: { type: Boolean, optional: true },
         onPaymentConfirmed: Function,
+        "*": true,
     };
 
     setup() {
