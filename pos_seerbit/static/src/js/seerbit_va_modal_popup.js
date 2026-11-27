@@ -15,6 +15,9 @@ export class SeerbitVaModalPopup extends Component {
         autoGenerate: { type: Boolean, optional: true },
         validateOrder: { type: Function, optional: true },
         close: { type: Function, optional: true },
+        balanceRequired: { type: Number, optional: true },
+        isReopeningPartial: { type: Boolean, optional: true },
+        "*": true,
     };
 
     setup() {

@@ -12,6 +12,7 @@ export class SeerbitVaPaymentWidget extends Component {
     static props = {
         paymentLine: { type: Object, optional: true },
         validateOrder: { type: Function, optional: true },
+        "*": true,
     };
 
     setup() {
