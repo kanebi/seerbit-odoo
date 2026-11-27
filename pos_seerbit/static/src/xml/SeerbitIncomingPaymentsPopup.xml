@@ -64,11 +64,11 @@
                                 t-on-click="() => this.filterByTillPm(null)">
                             All
                         </button>
-                        <t t-foreach="state.tillPms" t-as="tpm" t-key="tpm.id">
+                        <t t-foreach="state.tillPms" t-as="tpm" t-key="tpm.key || (tpm.config_id ? (tpm.config_id + '_' + tpm.id) : (tpm.id + '_' + tpm_index))">
                             <button type="button" 
-                                    t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === tpm.id ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary bg-white text-dark'}"
+                                    t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary bg-white text-dark'}"
                                     style="font-size: 0.75rem;"
-                                    t-on-click="() => this.filterByTillPm(tpm.id)">
+                                    t-on-click="() => this.filterByTillPm(tpm.key || tpm.id)">
                                 <i class="fa fa-tag me-1 text-muted"/>
                                 <t t-esc="tpm.label"/>
                             </button>
@@ -132,7 +132,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr t-foreach="filteredPayments" t-as="p" t-key="p.id"
+                                    <tr t-foreach="filteredPayments" t-as="p" t-key="p.id ? (p.id + '_' + p_index) : p_index"
                                         t-att-class="{'table-secondary opacity-50': p.matching_status === 'transferred', 'table-success': isExactAmount(p.amount) and p.matching_status !== 'transferred'}">
                                         <td class="small fw-semibold" style="color: #374151;"><t t-esc="formatDate(p.payment_date)"/></td>
                                         <td t-if="state.activePaymentTab === 'all'">
@@ -225,7 +225,7 @@
                                 </t>
                                 <t t-else="">
                                     <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
-                                        <button t-foreach="state.availableTills" t-as="till" t-key="till.id"
+                                        <button t-foreach="state.availableTills" t-as="till" t-key="till.id ? (till.id + '_' + till_index) : till_index"
                                                 type="button"
                                                 class="list-group-item list-group-item-action py-2 px-3 d-flex justify-content-between align-items-center"
                                                 t-att-class="{'active text-white': state.selectedTargetTillId === till.id}"
@@ -254,7 +254,7 @@
                                         <div class="mb-3">
                                             <label class="form-label small fw-bold">Select Transfer Method:</label>
                                             <select class="form-select form-select-sm" t-model="state.selectedTargetPmId">
-                                                <option t-foreach="selectedTillObj.payment_methods" t-as="pm" t-key="pm.id" t-att-value="pm.id">
+                                                <option t-foreach="selectedTillObj.payment_methods" t-as="pm" t-key="pm.id ? (pm.id + '_' + pm_index) : pm_index" t-att-value="pm.id">
                                                     <t t-esc="pm.name"/> (<t t-esc="pm.account_number"/> - <t t-esc="pm.bank_name"/>)
                                                 </option>
                                             </select>
