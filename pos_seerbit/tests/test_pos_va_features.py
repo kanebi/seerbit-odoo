@@ -352,3 +352,26 @@ class TestPosVaFeatures(SeerbitCommon, HttpCase):
         self.assertIn('SBT_MULTI_01_B', order.seerbit_transaction_ref)
         self.assertIn('Alice Buyer', order.seerbit_payer_name)
         self.assertIn('Bob Buyer', order.seerbit_payer_name)
+
+    def test_overpayment_without_cash_payment_method(self):
+        """Test that overpayment in a cashless session adjusts amount_return to 0.0 and does not raise UserError."""
+        pos_config = self.pos_config
+        pos_config.payment_method_ids = [(6, 0, [self.pm_static.id])]
+        session = pos_config.current_session_id or self.env['pos.session'].create({
+            'config_id': pos_config.id,
+            'user_id': self.env.uid,
+        })
+        order, payment = self._create_pos_order(self.pm_static, 43.0, 'SBT_OVERPAY_01')
+        order.session_id = session.id
+
+        pos_order_dict = {
+            'amount_return': 43.0,
+            'lines': [],
+            'payment_ids': [[0, 0, {
+                'payment_method_id': self.pm_static.id,
+                'amount': 86.0,
+            }]],
+        }
+
+        self.env['pos.order']._process_payment_lines(pos_order_dict, order, session, draft=False)
+        self.assertEqual(pos_order_dict['amount_return'], 0.0)

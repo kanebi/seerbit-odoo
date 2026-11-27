@@ -322,12 +322,27 @@ export class SeerbitVaPaymentWidget extends Component {
         line.seerbit_transaction_ref = transaction.reference;
         line.seerbit_payer_name = transaction.payer_name;
         line.seerbit_va_transaction_id = transaction.transaction_id;
-        line.seerbit_matched_amount = transaction.amount || this.expectedAmount;
+        const payAmt = Number(transaction.amount || this.expectedAmount);
+        const expected = Number(this.expectedAmount || 0);
+        const amountToSettle = expected > 0 ? Math.min(payAmt, expected) : payAmt;
+        const overpaymentAmount = expected > 0 ? Math.max(0, payAmt - expected) : 0;
+
+        line.seerbit_matched_amount = payAmt;
+        line.seerbit_overpaid_amount = overpaymentAmount;
         if (!line.seerbit_is_partially_matched) {
             line.seerbit_matched_count = 1;
         }
         line.seerbit_is_partially_matched = false;
         line.seerbit_is_matched = true;
+        if (amountToSettle > 0 && Math.abs(line.amount - amountToSettle) > 0.001) {
+            if (line.set_amount) {
+                line.set_amount(amountToSettle);
+            } else if (line.setAmount) {
+                line.setAmount(amountToSettle);
+            } else {
+                line.amount = amountToSettle;
+            }
+        }
         // Populate standard Odoo fields so references show up on orders, payment forms, and reports
         line.transaction_id = transaction.reference;
         line.payment_ref_no = transaction.reference;

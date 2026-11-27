@@ -36,6 +36,11 @@
                             <t t-esc="line.seerbit_matched_count"/>
                         </span>
                     </t>
+                    <t t-if="line.seerbit_overpaid_amount and line.seerbit_overpaid_amount &gt; 0.01">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-1.5 py-0.5" style="font-size: 0.7rem;" title="Customer transferred more than order total">
+                            Overpaid
+                        </span>
+                    </t>
                 </span>
                 <span t-else="" 
                       class="badge bg-warning text-dark ms-2 fs-6 fw-bold">
@@ -77,6 +82,11 @@
                     <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
                         <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem;">
                             <t t-esc="line.seerbit_matched_count"/>
+                        </span>
+                    </t>
+                    <t t-if="line.seerbit_overpaid_amount and line.seerbit_overpaid_amount &gt; 0.01">
+                        <span class="badge rounded-pill bg-light text-dark ms-1 px-1.5 py-0.5" style="font-size: 0.7rem;" title="Customer transferred more than order total">
+                            Overpaid
                         </span>
                     </t>
                 </span>
