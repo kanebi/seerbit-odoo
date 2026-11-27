@@ -289,3 +289,66 @@ class TestPosVaFeatures(SeerbitCommon, HttpCase):
         data = res.json()
         self.assertEqual(data.get('ackReference'), 'EXPECTED_ACK_12345')
         self.assertEqual(data.get('status'), 'processed')
+
+    def test_multiple_transfer_matching_to_single_order(self):
+        """Test multiple partial transfer payments matched to a single POS order."""
+        order, payment = self._create_pos_order(self.pm_static, 100.0, 'SBT_MULTI_01')
+
+        tx1 = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_MULTI_PARTIAL_1',
+            'va_id': self.static_va.id,
+            'reference': 'SBT_MULTI_01_A',
+            'amount': 40.0,
+            'payer_name': 'Alice Buyer',
+            'status': 'successful',
+            'matching_status': 'unmatched',
+        })
+        tx2 = self.env['seerbit.va.transaction'].create({
+            'name': 'TX_MULTI_PARTIAL_2',
+            'va_id': self.static_va.id,
+            'reference': 'SBT_MULTI_01_B',
+            'amount': 60.0,
+            'payer_name': 'Bob Buyer',
+            'status': 'successful',
+            'matching_status': 'unmatched',
+        })
+
+        # Match both transactions to the order via atomic matching
+        res1 = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            transaction_id=tx1.id,
+            pos_order_uuid=order.pos_reference,
+            cashier_user_id=self.env.uid,
+        )
+        self.assertTrue(res1['success'])
+
+        res2 = self.env['seerbit.va.transaction'].match_payment_to_pos_order_atomic(
+            transaction_id=tx2.id,
+            pos_order_uuid=order.pos_reference,
+            cashier_user_id=self.env.uid,
+        )
+        self.assertTrue(res2['success'])
+
+        payment.write({
+            'seerbit_transaction_ref': 'SBT_MULTI_01_A, SBT_MULTI_01_B',
+        })
+
+        # Process saved order
+        order._process_saved_order(draft=False)
+
+        # Both transactions must be linked to order and payment
+        self.assertEqual(tx1.pos_order_id, order)
+        self.assertEqual(tx1.pos_payment_id, payment)
+        self.assertEqual(tx2.pos_order_id, order)
+        self.assertEqual(tx2.pos_payment_id, payment)
+
+        # Order seerbit_va_transaction_ids must contain both transactions
+        self.assertEqual(len(order.seerbit_va_transaction_ids), 2)
+        self.assertIn(tx1, order.seerbit_va_transaction_ids)
+        self.assertIn(tx2, order.seerbit_va_transaction_ids)
+
+        # Order totals and references are aggregated
+        self.assertEqual(order.seerbit_amount_received, 100.0)
+        self.assertIn('SBT_MULTI_01_A', order.seerbit_transaction_ref)
+        self.assertIn('SBT_MULTI_01_B', order.seerbit_transaction_ref)
+        self.assertIn('Alice Buyer', order.seerbit_payer_name)
+        self.assertIn('Bob Buyer', order.seerbit_payer_name)

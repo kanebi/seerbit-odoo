@@ -21,6 +21,12 @@ class PosPayment(models.Model):
         copy=False,
         readonly=True
     )
+    seerbit_va_transaction_ids = fields.One2many(
+        'seerbit.va.transaction',
+        'pos_payment_id',
+        string="SeerBit Transactions",
+        readonly=True
+    )
 
     @api.model_create_multi
     def create(self, vals_list):

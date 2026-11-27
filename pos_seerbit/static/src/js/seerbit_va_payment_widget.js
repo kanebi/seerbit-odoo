@@ -160,6 +160,9 @@ export class SeerbitVaPaymentWidget extends Component {
     }
 
     get isMatched() {
+        if (this.paymentLine?.seerbit_is_partially_matched) {
+            return false;
+        }
         return Boolean(
             this.paymentLine?.seerbit_is_matched ||
             this.paymentLine?.seerbit_va_transaction_id ||

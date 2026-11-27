@@ -33,6 +33,12 @@ class PosOrder(models.Model):
         copy=False,
         readonly=True
     )
+    seerbit_va_transaction_ids = fields.One2many(
+        'seerbit.va.transaction',
+        'pos_order_id',
+        string="SeerBit Transactions",
+        readonly=True
+    )
 
     @api.model
     def _attempt_va_auto_match(self, transaction):
@@ -194,47 +200,76 @@ class PosOrder(models.Model):
                             )
         res = super()._process_saved_order(draft)
         for order in self:
+            candidate_refs = set(filter(None, [
+                order.pos_reference,
+                order.name,
+                getattr(order, 'uuid', None),
+            ]))
             for payment in order.payment_ids:
-                if payment.payment_method_id.payment_method_type == 'transfer' or payment.seerbit_transaction_ref or payment.transaction_id:
-                    ref = payment.seerbit_transaction_ref or payment.transaction_id or payment.payment_ref_no or (payment.seerbit_va_transaction_id and payment.seerbit_va_transaction_id.reference)
-                    tx = payment.seerbit_va_transaction_id
-                    if not tx and ref:
-                        tx = self.env['seerbit.va.transaction'].search([('reference', '=', ref)], limit=1)
-                        if tx:
-                            payment.write({
-                                'seerbit_va_transaction_id': tx.id,
-                                'seerbit_transaction_ref': ref,
-                                'transaction_id': ref,
-                                'payment_ref_no': ref,
-                            })
+                if payment.seerbit_transaction_ref:
+                    for r in str(payment.seerbit_transaction_ref).split(','):
+                        r_clean = r.strip()
+                        if r_clean:
+                            candidate_refs.add(r_clean)
+                if payment.transaction_id:
+                    candidate_refs.add(payment.transaction_id)
+                if payment.payment_ref_no:
+                    candidate_refs.add(payment.payment_ref_no)
+                if payment.seerbit_va_transaction_id:
+                    candidate_refs.add(payment.seerbit_va_transaction_id.reference)
 
-                    if tx or ref:
-                        payer = payment.seerbit_payer_name or payment.cardholder_name or (tx and tx.payer_name) or 'Bank Customer'
-                        order.write({
-                            'seerbit_va_transaction_id': tx.id if tx else False,
-                            'seerbit_transaction_ref': ref or (tx and tx.reference),
-                            'seerbit_payer_name': payer,
-                            'seerbit_amount_received': payment.amount,
-                        })
-                        if not payment.transaction_id and ref:
-                            payment.write({'transaction_id': ref, 'payment_ref_no': ref})
-                        if tx:
-                            tx_vals = {
-                                'pos_order_id': order.id,
-                                'pos_order_ref': order.pos_reference or order.name,
-                                'pos_payment_id': payment.id,
-                                'pos_session_id': order.session_id.id,
-                            }
-                            if not tx.matched_by_user_id:
-                                tx_vals['matched_by_user_id'] = order.user_id.id or self.env.uid
-                            if tx.va_id.va_type == 'pos_dynamic' or tx.matching_status == 'unmatched':
-                                tx_vals['matching_status'] = 'auto_matched'
-                                if not tx.matched_at:
-                                    tx_vals['matched_at'] = fields.Datetime.now()
-                            elif not tx.matched_at:
-                                tx_vals['matched_at'] = fields.Datetime.now()
-                            tx.write(tx_vals)
-                    break
+            matched_txs = self.env['seerbit.va.transaction'].search([
+                '|',
+                ('pos_order_ref', 'in', list(candidate_refs)),
+                ('reference', 'in', list(candidate_refs)),
+            ])
+
+            transfer_payments = order.payment_ids.filtered(
+                lambda p: p.payment_method_id.payment_method_type == 'transfer' or p.seerbit_transaction_ref or p.transaction_id
+            )
+            primary_payment = transfer_payments[:1] if transfer_payments else False
+
+            if matched_txs:
+                total_received = sum(matched_txs.mapped('amount'))
+                refs_list = matched_txs.mapped('reference')
+                refs_str = ", ".join(refs_list)
+                payers_list = list(filter(None, set(matched_txs.mapped('payer_name'))))
+                payers_str = ", ".join(payers_list) or 'Bank Customer'
+
+                order.write({
+                    'seerbit_va_transaction_id': matched_txs[0].id,
+                    'seerbit_transaction_ref': refs_str,
+                    'seerbit_payer_name': payers_str,
+                    'seerbit_amount_received': total_received,
+                })
+
+                now = fields.Datetime.now()
+                for tx in matched_txs:
+                    tx_vals = {
+                        'pos_order_id': order.id,
+                        'pos_order_ref': order.pos_reference or order.name,
+                        'pos_session_id': order.session_id.id,
+                    }
+                    if primary_payment:
+                        tx_vals['pos_payment_id'] = primary_payment.id
+                    if not tx.matched_by_user_id:
+                        tx_vals['matched_by_user_id'] = order.user_id.id or self.env.uid
+                    if tx.va_id.va_type == 'pos_dynamic' or tx.matching_status == 'unmatched':
+                        tx_vals['matching_status'] = 'auto_matched'
+                        if not tx.matched_at:
+                            tx_vals['matched_at'] = now
+                    elif not tx.matched_at:
+                        tx_vals['matched_at'] = now
+                    tx.write(tx_vals)
+
+                if primary_payment:
+                    primary_payment.write({
+                        'seerbit_va_transaction_id': matched_txs[0].id,
+                        'seerbit_transaction_ref': refs_str,
+                        'transaction_id': refs_list[0] if refs_list else False,
+                        'payment_ref_no': refs_str,
+                        'cardholder_name': payers_str,
+                    })
         return res
 
 
