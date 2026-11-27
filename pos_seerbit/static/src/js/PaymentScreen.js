@@ -92,12 +92,15 @@ patch(PosOrder.prototype, {
     canBeValidated() {
         const hasUnmatchedTransfer = (this.payment_ids || []).some(
             (line) => line.payment_method_id?.payment_method_type === "transfer" &&
-                !line.seerbit_va_transaction_id &&
-                !line.seerbit_transaction_ref &&
-                !line.seerbit_is_matched &&
-                line.payment_status !== "done"
+                (line.seerbit_is_partially_matched || (
+                    !line.seerbit_va_transaction_id &&
+                    !line.seerbit_transaction_ref &&
+                    !line.seerbit_is_matched &&
+                    line.payment_status !== "done"
+                ))
         );
-        if (hasUnmatchedTransfer) {
+        const due = this.get_due ? this.get_due() : (this.totalDue || 0);
+        if (hasUnmatchedTransfer && due > 0.001) {
             return false;
         }
         return super.canBeValidated();
@@ -142,11 +145,32 @@ patch(PaymentScreen.prototype, {
         if (!line || line._seerbit_modal_open) {
             return;
         }
+        const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
+        let balanceRequired = 0;
+        const originalSettled = Number(line.seerbit_matched_amount || 0);
+
+        if (line.seerbit_is_partially_matched) {
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+            if (balanceRequired > 0.001) {
+                const newAmount = originalSettled + balanceRequired;
+                if (line.set_amount) {
+                    line.set_amount(newAmount);
+                } else if (line.setAmount) {
+                    line.setAmount(newAmount);
+                } else {
+                    line.amount = newAmount;
+                }
+            }
+        }
+
         line._seerbit_modal_open = true;
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
             autoGenerate: Boolean(options.autoGenerate),
+            balanceRequired: balanceRequired,
+            isReopeningPartial: Boolean(line.seerbit_is_partially_matched),
             validateOrder: () => this.validateOrder(),
         }, {
             onClose: () => {
@@ -177,11 +201,16 @@ patch(PaymentScreen.prototype, {
             const selectedLine = this.selectedPaymentLine;
             if (selectedLine) {
                 if (selectedLine.set_payment_status) {
-                    selectedLine.set_payment_status("waiting_transfer");
+                    selectedLine.set_payment_status(null);
                 } else if (selectedLine.setPaymentStatus) {
-                    selectedLine.setPaymentStatus("waiting_transfer");
+                    selectedLine.setPaymentStatus(null);
+                } else {
+                    selectedLine.payment_status = null;
                 }
                 selectedLine.seerbit_is_matched = false;
+                selectedLine.seerbit_is_partially_matched = false;
+                selectedLine.seerbit_matched_transactions = [];
+                selectedLine.seerbit_matched_count = 0;
                 selectedLine.seerbit_expanded = false;
 
                 const isDynamic = paymentMethod?.seerbit_transfer_type === "dynamic";
@@ -223,6 +252,19 @@ patch(PaymentScreen.prototype, {
             this.dialog.add(AlertDialog, {
                 title: _t("Bank Transfer Unmatched"),
                 body: _t("Cannot complete order: Bank transfer payment of %s has not been confirmed or matched yet. Please match the payment before validating.", this.env.utils.formatCurrency(transferAmt)),
+            });
+            return false;
+        }
+
+        const partialTransfer = this.paymentLines.find(
+            (line) => line.payment_method_id?.payment_method_type === "transfer" &&
+                line.seerbit_is_partially_matched
+        );
+        const orderDue = this.currentOrder.get_due ? this.currentOrder.get_due() : (this.currentOrder.totalDue || 0);
+        if (partialTransfer && orderDue > 0.01) {
+            this.dialog.add(AlertDialog, {
+                title: _t("Partial Transfer Incomplete"),
+                body: _t("Cannot complete order: Bank transfer is only partially matched. A balance of %s remains unpaid.", this.env.utils.formatCurrency(orderDue)),
             });
             return false;
         }

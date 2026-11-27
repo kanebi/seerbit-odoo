@@ -56,7 +56,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             initialSettledAmount: settledSoFar,
             balanceRequired: balanceRequired,
             currentExpectedAmount: isReopening ? balanceRequired : (this.props.expectedAmount || 0),
-            matchedTransactions: [],
+            matchedTransactions: (line && line.seerbit_matched_transactions) ? [...line.seerbit_matched_transactions] : [],
             // Multi-Till Payment Tabs & Filter
             activePaymentTab: "till", // 'till' | 'all'
             selectedTillPmFilter: null,
@@ -438,10 +438,17 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                 const currentExpected = this.expectedAmount;
                 const line = this.props.paymentLine;
 
+                const txRecord = {
+                    id: res.transaction_id || payment.id,
+                    reference: res.reference || payment.reference,
+                    amount: payAmt,
+                    payer_name: payment.payer_name,
+                };
+
                 if (payAmt < currentExpected - 0.01) {
                     // Partial payment matched! Settle exact amount on line and keep modal open
                     this.state.settledAmount += payAmt;
-                    this.state.matchedTransactions.push(res);
+                    this.state.matchedTransactions.push(txRecord);
                     this.state.isPartiallyMatched = true;
                     this.state.currentExpectedAmount = Math.max(0, currentExpected - payAmt);
 
@@ -449,10 +456,40 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                         line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_is_partially_matched = true;
                         line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
+                        line.seerbit_matched_transactions = [...this.state.matchedTransactions];
                         line.seerbit_transaction_ref = res.reference || payment.reference;
                         line.seerbit_payer_name = payment.payer_name;
                         line.transaction_id = res.reference || payment.reference;
                         line.payment_ref_no = res.reference || payment.reference;
+                        line.cardholder_name = payment.payer_name || line.cardholder_name || "Bank Transfer";
+                        line.card_type = "Seerbit VA";
+
+                        // Immediately update amount on line to settled so far
+                        if (line.set_amount) {
+                            line.set_amount(this.state.settledAmount);
+                        } else if (line.setAmount) {
+                            line.setAmount(this.state.settledAmount);
+                        } else {
+                            line.amount = this.state.settledAmount;
+                        }
+
+                        // Set payment_status to "done" so POS displays "Payment Successful"
+                        if (line.set_payment_status) {
+                            line.set_payment_status("done");
+                        } else if (line.setPaymentStatus) {
+                            line.setPaymentStatus("done");
+                        } else {
+                            line.payment_status = "done";
+                        }
+
+                        const receiptText = `\nBank Transfer (${line.seerbit_matched_count}): Ref ${txRecord.reference} - ${this.formatAmount(payAmt)} (Payer: ${txRecord.payer_name || 'N/A'})`;
+                        if (line.set_receipt_info) {
+                            line.set_receipt_info(receiptText);
+                        } else if (line.setReceiptInfo) {
+                            line.setReceiptInfo(receiptText);
+                        } else {
+                            line.ticket = (line.ticket || '') + receiptText;
+                        }
                     }
 
                     this.notification.add(
@@ -471,12 +508,13 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                     const overpaymentAmount = Math.max(0, payAmt - currentExpected);
 
                     this.state.settledAmount += amountToSettle;
-                    this.state.matchedTransactions.push(res);
+                    this.state.matchedTransactions.push(txRecord);
                     if (line) {
-                        line.seerbit_matched_amount = payAmt;
+                        line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_overpaid_amount = overpaymentAmount;
                         line.seerbit_is_partially_matched = false;
                         line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
+                        line.seerbit_matched_transactions = [...this.state.matchedTransactions];
                         line.seerbit_is_matched = true;
                         if (line.set_amount) {
                             line.set_amount(this.state.settledAmount);
@@ -484,6 +522,27 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                             line.setAmount(this.state.settledAmount);
                         } else {
                             line.amount = this.state.settledAmount;
+                        }
+                        if (line.set_payment_status) {
+                            line.set_payment_status("done");
+                        } else if (line.setPaymentStatus) {
+                            line.setPaymentStatus("done");
+                        } else {
+                            line.payment_status = "done";
+                        }
+
+                        if (line.seerbit_matched_transactions && line.seerbit_matched_transactions.length > 1) {
+                            let receiptText = "\n--- SeerBit Bank Transfers ---";
+                            line.seerbit_matched_transactions.forEach((tx, idx) => {
+                                receiptText += `\nTransfer (${idx + 1}/${line.seerbit_matched_transactions.length}): Ref ${tx.reference || 'N/A'} - ${this.formatAmount(tx.amount)} (Payer: ${tx.payer_name || 'N/A'})`;
+                            });
+                            if (line.set_receipt_info) {
+                                line.set_receipt_info(receiptText);
+                            } else if (line.setReceiptInfo) {
+                                line.setReceiptInfo(receiptText);
+                            } else {
+                                line.ticket = (line.ticket || '') + receiptText;
+                            }
                         }
                     }
                     if (overpaymentAmount > 0.01) {
@@ -524,10 +583,22 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                 }
                 line.seerbit_matched_amount = finalSettled;
                 line.seerbit_is_partially_matched = true;
-                if (line.set_payment_status) {
-                    line.set_payment_status("waiting");
-                } else if (line.setPaymentStatus) {
-                    line.setPaymentStatus("waiting");
+                if (finalSettled > 0) {
+                    if (line.set_payment_status) {
+                        line.set_payment_status("done");
+                    } else if (line.setPaymentStatus) {
+                        line.setPaymentStatus("done");
+                    } else {
+                        line.payment_status = "done";
+                    }
+                } else {
+                    if (line.set_payment_status) {
+                        line.set_payment_status(null);
+                    } else if (line.setPaymentStatus) {
+                        line.setPaymentStatus(null);
+                    } else {
+                        line.payment_status = null;
+                    }
                 }
             }
         }

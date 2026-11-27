@@ -27,6 +27,15 @@
                         <field name="seerbit_va_transaction_id" readonly="1"/>
                     </group>
                 </group>
+                <field name="seerbit_va_transaction_ids" readonly="1" invisible="not seerbit_va_transaction_ids">
+                    <list>
+                        <field name="reference"/>
+                        <field name="payer_name"/>
+                        <field name="amount"/>
+                        <field name="payment_date"/>
+                        <field name="matching_status"/>
+                    </list>
+                </field>
             </xpath>
         </field>
     </record>
