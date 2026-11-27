@@ -373,6 +373,20 @@ export class SeerbitVaPaymentWidget extends Component {
 
         const order = this.pos.getOrder ? this.pos.getOrder() : this.pos.get_order();
         if (order) {
+            const paymentLines = order.get_paymentlines ? order.get_paymentlines() : (order.payment_ids || []);
+            const hasOverpayment = Boolean(line?.seerbit_overpaid_amount > 0.01) ||
+                paymentLines.some((l) => l.seerbit_overpaid_amount > 0.01) ||
+                (overpaymentAmount > 0.01);
+
+            if (hasOverpayment) {
+                // Option B: Pause on PaymentScreen for cashier review on overpayment! Do NOT auto-validate.
+                this.notification.add(
+                    _t("Overpayment detected. Please review payment line and validate manually."),
+                    { type: "warning", sticky: true }
+                );
+                return;
+            }
+
             const isPaid = order.isPaid ? order.isPaid() : (order.is_paid ? order.is_paid() : false);
             const due = order.get_due ? order.get_due() : (order.totalDue !== undefined ? order.totalDue : 0);
             if ((isPaid || due <= 0.01) && due <= 0.01) {

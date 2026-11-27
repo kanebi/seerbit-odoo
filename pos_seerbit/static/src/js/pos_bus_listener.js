@@ -70,6 +70,12 @@ export const posSeerbitBusService = {
             if (!order || order.finalized || order.state === "paid") {
                 return;
             }
+            const paymentLines = order.get_paymentlines ? order.get_paymentlines() : (order.payment_ids || []);
+            const hasOverpayment = paymentLines.some(l => l.seerbit_overpaid_amount > 0.01);
+            if (hasOverpayment) {
+                // Option B: Pause on PaymentScreen for cashier review on overpayment! Do NOT auto-validate.
+                return;
+            }
             const isPaid = order.isPaid ? order.isPaid() : (order.is_paid ? order.is_paid() : false);
             const due = order.get_due ? order.get_due() : (order.totalDue !== undefined ? order.totalDue : 0);
             if (!isPaid && due > 0.01) {
@@ -109,10 +115,45 @@ export const posSeerbitBusService = {
         };
 
         const matchLineWithData = (line, order, data) => {
+            const payAmt = parseFloat(data.amount || 0);
+            const expectedAmt = line.getAmount ? line.getAmount() : (line.amount || 0);
+            const overpaymentAmount = payAmt > expectedAmt + 0.01 ? (payAmt - expectedAmt) : 0;
+            const isUnderpaid = payAmt > 0 && payAmt < expectedAmt - 0.01;
+
             line.seerbit_transaction_ref = data.reference;
             line.seerbit_payer_name = data.payer_name;
             line.seerbit_va_transaction_id = data.transaction_id;
             line.seerbit_is_matched = true;
+
+            if (payAmt > 0) {
+                line.seerbit_matched_amount = payAmt;
+            }
+            if (overpaymentAmount > 0.01) {
+                line.seerbit_overpaid_amount = overpaymentAmount;
+                line.seerbit_is_partially_matched = false;
+                const amountToSettle = Math.min(payAmt, expectedAmt);
+                if (line.set_amount) {
+                    line.set_amount(amountToSettle);
+                } else if (line.setAmount) {
+                    line.setAmount(amountToSettle);
+                } else {
+                    line.amount = amountToSettle;
+                }
+            } else if (isUnderpaid) {
+                line.seerbit_overpaid_amount = 0;
+                line.seerbit_is_partially_matched = true;
+                if (line.set_amount) {
+                    line.set_amount(payAmt);
+                } else if (line.setAmount) {
+                    line.setAmount(payAmt);
+                } else {
+                    line.amount = payAmt;
+                }
+            } else {
+                line.seerbit_overpaid_amount = 0;
+                line.seerbit_is_partially_matched = false;
+            }
+
             // Populate standard Odoo fields so references show up on orders, payment forms, and reports
             line.transaction_id = data.reference;
             line.payment_ref_no = data.reference;
@@ -152,7 +193,19 @@ export const posSeerbitBusService = {
                 return;
             }
 
-            autoValidateOrder(order);
+            if (overpaymentAmount > 0.01) {
+                notification.add(
+                    _t("Payment of %s matched with overpayment of %s. Exact order amount not met — please review and validate manually.", data.amount, overpaymentAmount),
+                    { type: "warning", sticky: true }
+                );
+            } else if (isUnderpaid) {
+                notification.add(
+                    _t("Partial payment of %s received. Unpaid balance remains — manual validation required.", data.amount),
+                    { type: "info", sticky: true }
+                );
+            } else {
+                autoValidateOrder(order);
+            }
         };
 
         bus_service.subscribe("seerbit_va_notification", (payload) => {
