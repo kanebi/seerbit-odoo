@@ -100,9 +100,9 @@
                             </div>
 
                             <!-- Dynamic VA Exact Amount Notice (Pre-generation) -->
-                            <div class="alert alert-warning py-2 px-3 mb-4 mx-auto text-start rounded-3" style="max-width: 420px; background: #FFFBEB; border: 1.5px solid #FCD34D; color: #92400E;">
-                                <span class="small fw-bold">
-                                    <i class="fa fa-exclamation-triangle me-1" style="color: #D97706;"/>
+                            <div class="py-2 px-3 mb-4 mx-auto text-start rounded-3 shadow-sm" style="max-width: 420px; background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E40AF;">
+                                <span class="small fw-semibold">
+                                    <i class="fa fa-info-circle me-1" style="color: #2563EB; font-size: 0.95rem;"/>
                                     Please ensure the customer transfers the <strong>exact amount (<t t-esc="expectedAmountFormatted"/>)</strong> to the generated account.
                                 </span>
                             </div>
@@ -221,22 +221,12 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Dynamic VA Bank Account Name Info Note -->
-                                            <div t-if="isDynamic and !state.isExpired" 
-                                                 class="d-flex align-items-center justify-content-between p-2 px-3 mb-2 rounded-3 shadow-sm"
-                                                 style="background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E40AF;">
-                                                <span class="small fw-semibold" style="font-size: 0.82rem; line-height: 1.35;">
-                                                    Account name displayed on the bank may not match the account name displayed here.
-                                                </span>
-                                                <i class="fa fa-info-circle fs-5 ms-2 flex-shrink-0" style="color: #2563EB;"/>
-                                            </div>
-
-                                            <!-- Dynamic VA Exact Amount Transfer Notice -->
+                                            <!-- Dynamic VA Exact Amount Transfer Notice (Blue Info Style) -->
                                             <div t-if="isDynamic and !state.isExpired" 
                                                  class="d-flex align-items-center justify-content-between p-2 px-3 mb-3 rounded-3 shadow-sm"
-                                                 style="background: #FFFBEB; border: 1.5px solid #FCD34D; color: #92400E;">
-                                                <span class="small fw-bold" style="font-size: 0.82rem; line-height: 1.35;">
-                                                    <i class="fa fa-exclamation-triangle me-1" style="color: #D97706;"/>
+                                                 style="background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E40AF;">
+                                                <span class="small fw-semibold" style="font-size: 0.82rem; line-height: 1.35;">
+                                                    <i class="fa fa-info-circle me-1" style="color: #2563EB; font-size: 0.95rem;"/>
                                                     Please ensure the customer transfers the <strong>exact amount (<t t-esc="expectedAmountFormatted"/>)</strong> to this account.
                                                 </span>
                                             </div>
@@ -311,14 +301,14 @@
                                             <div class="small fw-bold text-truncate" style="color: #1E293B;" t-att-title="accountName">
                                                 <t t-esc="accountName"/>
                                             </div>
-                                            <!-- Dynamic VA Bank Account Name Info Note (Squeezed View) -->
+                                            <!-- Dynamic VA Exact Amount Transfer Notice (Squeezed View - Blue Style) -->
                                             <div t-if="isDynamic and !state.isExpired" 
-                                                 class="d-flex align-items-center justify-content-between p-2 mt-2 rounded-3"
+                                                 class="d-flex align-items-center justify-content-between p-2 mt-2 rounded-3 shadow-sm"
                                                  style="background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF;">
                                                 <span class="fw-semibold" style="font-size: 0.72rem; line-height: 1.25;">
-                                                    Account name displayed on the bank may not match the account name displayed here.
+                                                    <i class="fa fa-info-circle me-1" style="color: #2563EB; font-size: 0.85rem;"/>
+                                                    Transfer exact amount: <strong><t t-esc="expectedAmountFormatted"/></strong>
                                                 </span>
-                                                <i class="fa fa-info-circle ms-1 flex-shrink-0" style="color: #2563EB; font-size: 0.85rem;"/>
                                             </div>
                                         </div>
 
