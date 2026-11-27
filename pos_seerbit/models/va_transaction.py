@@ -518,6 +518,7 @@ class SeerbitVaTransaction(models.Model):
                     continue
                 seen_keys.add(key)
                 seen_pm_ids.add(pm.id)
+                acc_num = pm.seerbit_va_id.account_number or getattr(pm, 'seerbit_va_account_number', '') or ''
                 till_pms.append({
                     'id': pm.id,
                     'key': key,
@@ -525,7 +526,7 @@ class SeerbitVaTransaction(models.Model):
                     'config_name': cfg.name,
                     'pm_name': pm.name,
                     'label': f"{cfg.name}: {pm.name}",
-                    'account_number': pm.seerbit_va_id.account_number,
+                    'account_number': acc_num,
                     'va_id': pm.seerbit_va_id.id,
                     'is_current_till': bool(current_config_id and cfg.id == current_config_id),
                 })
@@ -542,14 +543,15 @@ class SeerbitVaTransaction(models.Model):
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            acc_num = pm.seerbit_va_id.account_number or getattr(pm, 'seerbit_va_account_number', '') or ''
             till_pms.append({
                 'id': pm.id,
                 'key': key,
                 'config_id': False,
                 'config_name': 'Company Static',
                 'pm_name': pm.name,
-                'label': f"{pm.name} ({pm.seerbit_va_account_number or 'VA'})",
-                'account_number': pm.seerbit_va_id.account_number,
+                'label': f"{pm.name} ({acc_num or 'VA'})",
+                'account_number': acc_num,
                 'va_id': pm.seerbit_va_id.id,
                 'is_current_till': False,
             })

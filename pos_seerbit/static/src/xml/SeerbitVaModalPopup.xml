@@ -427,13 +427,19 @@
                                                     <button type="button" 
                                                             t-attf-class="btn btn-sm text-start p-1.5 rounded-2 border w-100 transition-all #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'text-white shadow-sm' : 'btn-light bg-white text-dark border-secondary-subtle'}"
                                                             t-attf-style="#{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'background-color: #EB3E25 !important; border-color: #EB3E25 !important; color: #ffffff !important;' : ''}"
-                                                            t-att-title="tpm.label"
+                                                            t-att-title="tpm.label + (tpm.account_number ? (' - ' + tpm.account_number) : '')"
                                                             t-on-click="() => this.filterByTillPm(tpm.key || tpm.id)">
                                                         <div class="fw-bold text-truncate" style="font-size: 0.74rem; line-height: 1.2;">
                                                             <t t-esc="tpm.config_name || 'Till'"/>
                                                         </div>
                                                         <div class="text-truncate opacity-75" style="font-size: 0.66rem; line-height: 1.2;" t-att-title="tpm.pm_name">
                                                             <t t-esc="tpm.pm_name"/>
+                                                        </div>
+                                                        <div t-if="tpm.account_number" 
+                                                             class="text-truncate font-monospace fw-bold" 
+                                                             t-attf-style="font-size: 0.66rem; line-height: 1.25; margin-top: 1px; #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'color: #ffffff !important;' : 'color: #714B67 !important;'}"
+                                                             t-att-title="tpm.account_number">
+                                                            <t t-esc="tpm.account_number"/>
                                                         </div>
                                                     </button>
                                                 </t>

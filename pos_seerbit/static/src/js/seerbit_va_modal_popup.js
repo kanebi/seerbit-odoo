@@ -340,7 +340,9 @@ export class SeerbitVaModalPopup extends Component {
         const found = (this.state.tillPms || []).find(
             (tpm) => (tpm.key || tpm.id) === this.state.selectedTillPmFilter || tpm.id === this.state.selectedTillPmFilter
         );
-        return found ? (found.label || (found.config_name + ": " + found.pm_name)) : "Selected Till PM";
+        if (!found) return "Selected Till PM";
+        const base = found.label || (found.config_name + ": " + found.pm_name);
+        return found.account_number ? `${base} (${found.account_number})` : base;
     }
 
 
@@ -917,8 +919,13 @@ export class SeerbitVaModalPopup extends Component {
             if (data.reference) line.seerbit_transaction_ref = data.reference;
             if (data.payer_name) line.seerbit_payer_name = data.payer_name;
             if (data.transaction_id || data.id) line.seerbit_va_transaction_id = data.transaction_id || data.id;
-            const finalTotal = this.state.settledAmount > 0 ? this.state.settledAmount : (data.amount || this.expectedAmount);
-            line.seerbit_matched_amount = finalTotal;
+            const payAmt = Number(data.amount || this.expectedAmount);
+            const expected = Number(this.originalExpectedAmount || this.expectedAmount || 0);
+            const amountToSettle = expected > 0 ? Math.min(payAmt, expected) : payAmt;
+            const overpaymentAmount = expected > 0 ? Math.max(0, payAmt - expected) : 0;
+            const finalTotal = this.state.settledAmount > 0 ? this.state.settledAmount : amountToSettle;
+            line.seerbit_matched_amount = payAmt;
+            line.seerbit_overpaid_amount = overpaymentAmount;
             if (!line.seerbit_matched_count) {
                 line.seerbit_matched_count = 1;
             }

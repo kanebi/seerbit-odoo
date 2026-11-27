@@ -166,7 +166,9 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         const found = (this.state.tillPms || []).find(
             (tpm) => (tpm.key || tpm.id) === this.state.selectedTillPmFilter || tpm.id === this.state.selectedTillPmFilter
         );
-        return found ? (found.label || (found.config_name + ": " + found.pm_name)) : "Selected Till PM";
+        if (!found) return "Selected Till PM";
+        const base = found.label || (found.config_name + ": " + found.pm_name);
+        return found.account_number ? `${base} (${found.account_number})` : base;
     }
 
 
