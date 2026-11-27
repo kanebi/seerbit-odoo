@@ -346,6 +346,28 @@
                                         </span>
                                     </div>
 
+                                    <!-- Search & Refresh Toolbar -->
+                                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+                                        <div class="input-group input-group-sm flex-grow-1">
+                                            <span class="input-group-text bg-light border-end-0"><i class="fa fa-search text-muted"/></span>
+                                            <input type="text"
+                                                   class="form-control border-start-0"
+                                                   placeholder="Search by customer name, reference, or amount..."
+                                                   t-model="state.paymentsSearchQuery"/>
+                                        </div>
+                                        <button class="btn btn-sm seerbit-btn-primary px-3 fw-bold shadow-sm flex-shrink-0"
+                                                t-att-disabled="state.syncingPayments"
+                                                t-on-click="syncLiveFromSeerbit">
+                                            <i t-attf-class="fa #{state.syncingPayments ? 'fa-spinner fa-spin' : 'fa-refresh'} me-1"/>
+                                            <t t-if="state.syncingPayments">Checking...</t>
+                                            <t t-else="">Refresh</t>
+                                        </button>
+                                        <button class="btn btn-sm seerbit-btn-outline-primary px-3 fw-bold shadow-sm flex-shrink-0"
+                                                t-on-click="togglePaymentsList">
+                                            <i class="fa fa-arrow-left me-1"/> Back to Account View
+                                        </button>
+                                    </div>
+
                                     <!-- Navigation Tabs: Till Payment (default) vs All Payments -->
                                     <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
                                         <div class="btn-group btn-group-sm" role="group">
@@ -371,50 +393,60 @@
                                         </div>
                                     </div>
 
-                                    <!-- Tag-like Filter Buttons of All Static Payment Methods with Till Name -->
-                                    <div t-if="state.activePaymentTab === 'all'" class="d-flex flex-wrap align-items-center gap-1 mb-2 p-2 bg-light rounded border">
-                                        <span class="small fw-bolder text-muted text-uppercase me-1" style="font-size: 0.72rem;">Till PM:</span>
-                                        <button type="button" 
-                                                t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === null ? 'btn-dark text-white' : 'btn-outline-secondary bg-white'}"
-                                                style="font-size: 0.75rem;"
-                                                t-on-click="() => this.filterByTillPm(null)">
-                                            All
-                                        </button>
-                                        <t t-foreach="state.tillPms" t-as="tpm" t-key="tpm.key || (tpm.config_id ? (tpm.config_id + '_' + tpm.id) : (tpm.id + '_' + tpm_index))">
-                                            <button type="button" 
-                                                    t-attf-class="btn btn-sm rounded-pill px-2 py-0 fw-bold #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary bg-white text-dark'}"
-                                                    style="font-size: 0.75rem;"
-                                                    t-on-click="() => this.filterByTillPm(tpm.key || tpm.id)">
-                                                <i class="fa fa-tag me-1 text-muted"/>
-                                                <t t-esc="tpm.label"/>
-                                            </button>
-                                        </t>
-                                    </div>
+                                    <!-- Main Payments Content Area: Left Sidebar (Till PM Boxed Cards when in 'All Payments' mode) + Right Payments Table -->
+                                    <div class="d-flex flex-grow-1 gap-2 overflow-hidden" style="min-height: 380px; max-height: 420px;">
+                                        
+                                        <!-- Till PM Boxed Cards Sidebar (Parent Scrollable Vertical Component on Left) -->
+                                        <div t-if="state.activePaymentTab === 'all'" 
+                                             class="d-flex flex-column bg-light rounded-3 border p-2 overflow-y-auto flex-shrink-0 shadow-sm seerbit-till-pm-sidebar" 
+                                             style="width: 220px; min-width: 200px; max-width: 240px; max-height: 420px;">
+                                            
+                                            <div class="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom px-1">
+                                                <span class="small fw-bolder text-muted text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+                                                    <i class="fa fa-filter me-1 text-primary"/> Till PM
+                                                </span>
+                                                <span class="badge rounded bg-secondary text-white" style="font-size: 0.68rem;">
+                                                    <t t-esc="(state.tillPms ? state.tillPms.length : 0) + 1"/>
+                                                </span>
+                                            </div>
 
-                                    <!-- Search & Refresh Toolbar -->
-                                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
-                                        <div class="input-group input-group-sm flex-grow-1">
-                                            <span class="input-group-text bg-light border-end-0"><i class="fa fa-search text-muted"/></span>
-                                            <input type="text"
-                                                   class="form-control border-start-0"
-                                                   placeholder="Search by customer name, reference, or amount..."
-                                                   t-model="state.paymentsSearchQuery"/>
+                                            <div class="d-flex flex-column gap-1">
+                                                <!-- "All" Small Box Card -->
+                                                <button type="button" 
+                                                        t-attf-class="btn btn-sm text-start p-2 rounded-2 border fw-bold w-100 transition-all #{state.selectedTillPmFilter === null ? 'btn-primary text-white shadow-sm border-primary' : 'btn-light bg-white text-dark border-secondary-subtle'}"
+                                                        t-on-click="() => this.filterByTillPm(null)">
+                                                    <div class="d-flex align-items-center justify-content-between">
+                                                        <div class="d-flex align-items-center text-truncate">
+                                                            <i class="fa fa-cubes me-2 #{state.selectedTillPmFilter === null ? 'text-white' : 'text-primary'}"/>
+                                                            <span class="text-truncate" style="font-size: 0.78rem;">All PMs</span>
+                                                        </div>
+                                                        <span t-if="state.allPayments and state.allPayments.length" 
+                                                              t-attf-class="badge rounded-pill #{state.selectedTillPmFilter === null ? 'bg-white text-primary' : 'bg-secondary text-white'} ms-1" 
+                                                              style="font-size: 0.68rem;">
+                                                            <t t-esc="state.allPayments.length"/>
+                                                        </span>
+                                                    </div>
+                                                </button>
+
+                                                <!-- Each Till PM Small Box Card Following Another Vertically -->
+                                                <t t-foreach="state.tillPms" t-as="tpm" t-key="tpm.key || (tpm.config_id ? (tpm.config_id + '_' + tpm.id) : (tpm.id + '_' + tpm_index))">
+                                                    <button type="button" 
+                                                            t-attf-class="btn btn-sm text-start p-2 rounded-2 border fw-bold w-100 transition-all #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'btn-primary text-white shadow-sm border-primary' : 'btn-light bg-white text-dark border-secondary-subtle'}"
+                                                            t-att-title="tpm.label"
+                                                            t-on-click="() => this.filterByTillPm(tpm.key || tpm.id)">
+                                                        <div class="d-flex align-items-center">
+                                                            <i class="fa fa-desktop me-2 flex-shrink-0 #{state.selectedTillPmFilter === (tpm.key || tpm.id) ? 'text-white' : 'text-muted'}" style="font-size: 0.75rem;"/>
+                                                            <span class="text-truncate" style="font-size: 0.78rem; line-height: 1.25;">
+                                                                <t t-esc="tpm.label"/>
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                </t>
+                                            </div>
                                         </div>
-                                        <button class="btn btn-sm seerbit-btn-primary px-3 fw-bold shadow-sm flex-shrink-0"
-                                                t-att-disabled="state.syncingPayments"
-                                                t-on-click="syncLiveFromSeerbit">
-                                            <i t-attf-class="fa #{state.syncingPayments ? 'fa-spinner fa-spin' : 'fa-refresh'} me-1"/>
-                                            <t t-if="state.syncingPayments">Checking...</t>
-                                            <t t-else="">Refresh</t>
-                                        </button>
-                                        <button class="btn btn-sm seerbit-btn-outline-primary px-3 fw-bold shadow-sm flex-shrink-0"
-                                                t-on-click="togglePaymentsList">
-                                            <i class="fa fa-arrow-left me-1"/> Back to Account View
-                                        </button>
-                                    </div>
 
-                                    <!-- Payments Table (Scrollable) -->
-                                    <div class="table-responsive flex-grow-1 border rounded" style="max-height: 380px; overflow-y: auto;">
+                                        <!-- Payments Table (Scrollable) -->
+                                        <div class="table-responsive flex-grow-1 border rounded" style="max-height: 380px; overflow-y: auto;">
                                         <t t-if="state.loadingPayments">
                                              <div class="text-center py-5">
                                                  <div class="spinner-border mb-2" style="color: #EB3E25;" role="status"/>
@@ -495,7 +527,7 @@
                                                 </tbody>
                                             </table>
                                         </t>
-                                    </div>
+                                    </div></div>
                                 </div>
 
                             </div>
