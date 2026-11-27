@@ -250,7 +250,12 @@ export class SeerbitVaPaymentWidget extends Component {
             this._startCountdownTimer();
         } catch (err) {
             console.error("Failed to generate dynamic virtual account:", err);
-            const errorMsg = err.data?.message || err.data?.data?.message || err.message || _t("Failed to generate dynamic Virtual Account.");
+            const errorMsg =
+                err.data?.data?.arguments?.[0] ||
+                err.data?.data?.message ||
+                (err.data?.message && err.data.message !== "Odoo Server Error" ? err.data.message : null) ||
+                err.message ||
+                _t("Failed to generate dynamic Virtual Account.");
             this.state.error = errorMsg;
             this.notification.add(this.state.error, { type: "danger" });
         } finally {
@@ -276,13 +281,31 @@ export class SeerbitVaPaymentWidget extends Component {
 
     async openIncomingPaymentsModal() {
         const order = this.pos.getOrder ? this.pos.getOrder() : this.pos.get_order();
-        const amount = this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
+        let amount = this.paymentLine ? (this.paymentLine.getAmount ? this.paymentLine.getAmount() : this.paymentLine.amount || 0) : 0;
+        let balanceRequired = 0;
+        if (this.paymentLine?.seerbit_is_partially_matched) {
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+            const originalSettled = Number(this.paymentLine.seerbit_matched_amount || 0);
+            if (balanceRequired > 0.001) {
+                const newAmount = originalSettled + balanceRequired;
+                if (this.paymentLine.set_amount) {
+                    this.paymentLine.set_amount(newAmount);
+                } else if (this.paymentLine.setAmount) {
+                    this.paymentLine.setAmount(newAmount);
+                } else {
+                    this.paymentLine.amount = newAmount;
+                }
+            }
+        }
         this.dialog.add(SeerbitIncomingPaymentsPopup, {
             order: order,
             paymentLine: this.paymentLine,
             vaId: this.vaId,
             accountNumber: this.accountNumber,
-            expectedAmount: amount,
+            expectedAmount: balanceRequired > 0 ? balanceRequired : amount,
+            balanceRequired: balanceRequired,
+            isReopeningPartial: Boolean(this.paymentLine?.seerbit_is_partially_matched),
             onPaymentConfirmed: (transaction) => this._onPaymentConfirmed(transaction),
         });
     }

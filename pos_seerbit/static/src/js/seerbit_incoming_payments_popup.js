@@ -24,6 +24,16 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         this.dialog = useService("dialog");
         this.notification = useService("notification");
         this.busService = useService("bus_service");
+        const line = this.props.paymentLine;
+        const isReopening = Boolean(this.props.isReopeningPartial || line?.seerbit_is_partially_matched);
+        const settledSoFar = Number(line?.seerbit_matched_amount || 0);
+        let balanceRequired = Number(this.props.balanceRequired || 0);
+        if (isReopening && !balanceRequired) {
+            const order = this.props.order || (this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.());
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+        }
+
         this.state = useState({
             payments: [],
             loading: true,
@@ -38,9 +48,11 @@ export class SeerbitIncomingPaymentsPopup extends Component {
             selectedTargetPmId: null,
             transferringPayment: false,
             // Partial matching state
-            isPartiallyMatched: false,
-            settledAmount: 0,
-            currentExpectedAmount: this.props.expectedAmount || 0,
+            isPartiallyMatched: isReopening,
+            settledAmount: settledSoFar,
+            initialSettledAmount: settledSoFar,
+            balanceRequired: balanceRequired,
+            currentExpectedAmount: isReopening ? balanceRequired : (this.props.expectedAmount || 0),
             matchedTransactions: [],
             // Multi-Till Payment Tabs & Filter
             activePaymentTab: "till", // 'till' | 'all'
@@ -168,6 +180,10 @@ export class SeerbitIncomingPaymentsPopup extends Component {
         } catch {
             return dateStr;
         }
+    }
+
+    get lineMatchedCount() {
+        return this.props.paymentLine?.seerbit_matched_count || this.state.matchedTransactions.length || 1;
     }
 
     get expectedAmount() {
@@ -410,7 +426,7 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                     if (line) {
                         line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_is_partially_matched = true;
-                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
                         line.seerbit_transaction_ref = res.reference || payment.reference;
                         line.seerbit_payer_name = payment.payer_name;
                         line.transaction_id = res.reference || payment.reference;
@@ -434,8 +450,15 @@ export class SeerbitIncomingPaymentsPopup extends Component {
                     if (line) {
                         line.seerbit_matched_amount = this.state.settledAmount;
                         line.seerbit_is_partially_matched = false;
-                        line.seerbit_matched_count = this.state.matchedTransactions.length;
+                        line.seerbit_matched_count = (line.seerbit_matched_count || 0) + 1;
                         line.seerbit_is_matched = true;
+                        if (line.set_amount) {
+                            line.set_amount(this.state.settledAmount);
+                        } else if (line.setAmount) {
+                            line.setAmount(this.state.settledAmount);
+                        } else {
+                            line.amount = this.state.settledAmount;
+                        }
                     }
                     this.props.onPaymentConfirmed(res);
                     this.props.close();
@@ -453,24 +476,27 @@ export class SeerbitIncomingPaymentsPopup extends Component {
     }
 
     closePopup() {
-        if (this.state.isPartiallyMatched && this.state.settledAmount > 0) {
-            const line = this.props.paymentLine;
-            if (line) {
+        const line = this.props.paymentLine;
+        if (line) {
+            if (line.seerbit_is_partially_matched || this.state.isPartiallyMatched) {
+                const finalSettled = this.state.settledAmount > 0 ? this.state.settledAmount : (line.seerbit_matched_amount || 0);
                 if (line.set_amount) {
-                    line.set_amount(this.state.settledAmount);
+                    line.set_amount(finalSettled);
+                } else if (line.setAmount) {
+                    line.setAmount(finalSettled);
                 } else {
-                    line.amount = this.state.settledAmount;
+                    line.amount = finalSettled;
                 }
-                if (line.set_payment_status) {
-                    line.set_payment_status("done");
-                } else if (line.setPaymentStatus) {
-                    line.setPaymentStatus("done");
-                }
+                line.seerbit_matched_amount = finalSettled;
                 line.seerbit_is_partially_matched = true;
-                line.seerbit_is_matched = true;
-                line.seerbit_matched_count = this.state.matchedTransactions.length;
+                if (line.set_payment_status) {
+                    line.set_payment_status("waiting");
+                } else if (line.setPaymentStatus) {
+                    line.setPaymentStatus("waiting");
+                }
             }
         }
+        this._stopQuietSpooler();
         if (this.props.close) {
             this.props.close();
         }

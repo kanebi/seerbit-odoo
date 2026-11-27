@@ -24,11 +24,35 @@ patch(PaymentScreenPaymentLines.prototype, {
         if (!line || line._seerbit_modal_open) {
             return;
         }
+        const order = this.pos?.getOrder ? this.pos.getOrder() : this.pos?.get_order?.();
+        let balanceRequired = 0;
+        const originalSettled = Number(line.seerbit_matched_amount || 0);
+
+        if (line.seerbit_is_partially_matched) {
+            // Calculate unpaid balance remaining on the order
+            const currentDue = order?.get_due ? order.get_due() : (order?.totalDue !== undefined ? order.totalDue : 0);
+            balanceRequired = Math.max(0, currentDue);
+
+            // On open: update line to add balance required so total order tender is accounted for
+            if (balanceRequired > 0.001) {
+                const newAmount = originalSettled + balanceRequired;
+                if (line.set_amount) {
+                    line.set_amount(newAmount);
+                } else if (line.setAmount) {
+                    line.setAmount(newAmount);
+                } else {
+                    line.amount = newAmount;
+                }
+            }
+        }
+
         line._seerbit_modal_open = true;
         this.dialog.add(SeerbitVaModalPopup, {
             paymentLine: line,
             pos: this.pos,
             autoGenerate: Boolean(options.autoGenerate),
+            balanceRequired: balanceRequired,
+            isReopeningPartial: Boolean(line.seerbit_is_partially_matched),
             validateOrder: () => {
                 if (typeof this.pos?.validateOrder === "function") {
                     return this.pos.validateOrder();
@@ -53,13 +77,11 @@ patch(PaymentScreenPaymentLines.prototype, {
     async selectLine(paymentline) {
         await super.selectLine(paymentline);
         if (paymentline?.payment_method_id?.payment_method_type === "transfer") {
-            const isMatched = Boolean(
-                paymentline.seerbit_is_matched ||
-                paymentline.seerbit_va_transaction_id ||
-                paymentline.seerbit_transaction_ref ||
-                paymentline.payment_status === "done"
+            const isFullyMatched = Boolean(
+                !paymentline.seerbit_is_partially_matched &&
+                (paymentline.seerbit_is_matched || paymentline.payment_status === "done")
             );
-            if (!isMatched && !paymentline._seerbit_modal_open) {
+            if (!isFullyMatched && !paymentline._seerbit_modal_open) {
                 this.openSeerbitModal(paymentline);
             }
         }
@@ -93,7 +115,11 @@ patch(PaymentScreen.prototype, {
             this.pos.validateOrder = (isForce = false) => this.validateOrder(isForce);
             const pendingPaymentLine = this.pos.getPendingPaymentLine("seerbit");
             if (pendingPaymentLine) {
-                pendingPaymentLine.setPaymentStatus("waitingSeerbit");
+                if (pendingPaymentLine.set_payment_status) {
+                    pendingPaymentLine.set_payment_status("waitingSeerbit");
+                } else if (pendingPaymentLine.setPaymentStatus) {
+                    pendingPaymentLine.setPaymentStatus("waitingSeerbit");
+                }
             }
         });
 
@@ -150,7 +176,11 @@ patch(PaymentScreen.prototype, {
         if (res && paymentMethod?.payment_method_type === "transfer") {
             const selectedLine = this.selectedPaymentLine;
             if (selectedLine) {
-                selectedLine.setPaymentStatus("waiting_transfer");
+                if (selectedLine.set_payment_status) {
+                    selectedLine.set_payment_status("waiting_transfer");
+                } else if (selectedLine.setPaymentStatus) {
+                    selectedLine.setPaymentStatus("waiting_transfer");
+                }
                 selectedLine.seerbit_is_matched = false;
                 selectedLine.seerbit_expanded = false;
 
@@ -189,9 +219,10 @@ patch(PaymentScreen.prototype, {
                 line.payment_status !== "done"
         );
         if (unmatchedTransfer) {
+            const transferAmt = unmatchedTransfer.get_amount ? unmatchedTransfer.get_amount() : (unmatchedTransfer.getAmount ? unmatchedTransfer.getAmount() : (unmatchedTransfer.amount || 0));
             this.dialog.add(AlertDialog, {
                 title: _t("Bank Transfer Unmatched"),
-                body: _t("Cannot complete order: Bank transfer payment of %s has not been confirmed or matched yet. Please match the payment before validating.", this.env.utils.formatCurrency(unmatchedTransfer.getAmount())),
+                body: _t("Cannot complete order: Bank transfer payment of %s has not been confirmed or matched yet. Please match the payment before validating.", this.env.utils.formatCurrency(transferAmt)),
             });
             return false;
         }
@@ -216,16 +247,25 @@ patch(PaymentScreen.prototype, {
 
     deletePaymentLine(uuid) {
         const line = this.paymentLines.find((paymentLine) => paymentLine.uuid === uuid);
+        const status = line ? (line.get_payment_status ? line.get_payment_status() : (line.getPaymentStatus ? line.getPaymentStatus() : line.payment_status)) : null;
         if (
             line &&
-            ["waitingSeerbit", "errorSeerbit"].includes(line.getPaymentStatus()) &&
+            ["waitingSeerbit", "errorSeerbit"].includes(status) &&
             line.payment_method_id.payment_terminal
         ) {
-            line.setPaymentStatus("waitingCancel");
+            if (line.set_payment_status) {
+                line.set_payment_status("waitingCancel");
+            } else if (line.setPaymentStatus) {
+                line.setPaymentStatus("waitingCancel");
+            }
             line.payment_method_id.payment_terminal
                 .sendPaymentCancel(this.currentOrder, uuid)
                 .then(() => {
-                    this.currentOrder.removePaymentline(line);
+                    if (this.currentOrder.remove_paymentline) {
+                        this.currentOrder.remove_paymentline(line);
+                    } else if (this.currentOrder.removePaymentline) {
+                        this.currentOrder.removePaymentline(line);
+                    }
                     this.numberBuffer.reset();
                 });
             return;

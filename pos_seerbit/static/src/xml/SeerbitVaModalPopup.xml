@@ -152,9 +152,15 @@
                                 <div class="col-12 col-md-5 d-flex flex-column">
                                     <div class="card h-100 p-4 seerbit-amount-card d-flex flex-column justify-content-between text-center">
                                         <div class="my-auto">
-                                            <div class="small fw-bolder text-uppercase" style="color: #166534; letter-spacing: 1.5px;">AMOUNT TO TRANSFER</div>
+                                            <div class="small fw-bolder text-uppercase" style="color: #166534; letter-spacing: 1.5px;">
+                                                <t t-if="state.isPartiallyMatched">BALANCE REQUIRED</t>
+                                                <t t-else="">AMOUNT TO TRANSFER</t>
+                                            </div>
                                             <div class="display-3 fw-bolder font-monospace my-3 text-truncate" style="color: #15803D; letter-spacing: -1px;">
                                                 <t t-esc="expectedAmountFormatted"/>
+                                            </div>
+                                            <div t-if="state.isPartiallyMatched and state.settledAmount &gt; 0" class="small fw-bold text-success mb-2">
+                                                <i class="fa fa-check-circle me-1"/> <t t-esc="formatAmount(state.settledAmount)"/> settled so far
                                             </div>
                                         </div>
 
@@ -333,10 +339,10 @@
                                         <div>
                                             <i class="fa fa-adjust me-2 text-primary"/>
                                             <span class="fw-bold">Partially Matched: <t t-esc="formatAmount(state.settledAmount)"/> settled.</span>
-                                            <span class="ms-2">Remaining balance to match: <strong><t t-esc="expectedAmountFormatted"/></strong></span>
+                                            <span class="ms-2">Balance required to complete: <strong><t t-esc="expectedAmountFormatted"/></strong></span>
                                         </div>
                                         <span class="badge rounded-pill bg-primary text-white px-2 py-1">
-                                            Partial (<t t-esc="state.matchedTransactions.length"/>)
+                                            Partial<t t-if="lineMatchedCount &gt; 1"> (<t t-esc="lineMatchedCount"/>)</t>
                                         </span>
                                     </div>
 

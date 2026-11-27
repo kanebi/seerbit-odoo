@@ -16,13 +16,17 @@
         <xpath expr="//span[contains(@class, 'payment-name')]" position="after">
             <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
                 <span t-if="line.seerbit_is_partially_matched" 
-                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center">
+                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center"
+                      style="cursor: pointer;"
+                      t-on-click.stop="() => this.openSeerbitModal(line)"
+                      title="Partially matched. Click to receive balance and match additional payments.">
                     <i class="fa fa-adjust me-1"/>Partially Matched
                     <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
                         <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem; border: 1px solid rgba(0,0,0,0.15);">
                             <t t-esc="line.seerbit_matched_count"/>
                         </span>
                     </t>
+                    <i class="fa fa-external-link ms-1 small" style="opacity: 0.7;"/>
                 </span>
                 <span t-elif="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
                       class="badge bg-success ms-2 fs-6 fw-bold d-inline-flex align-items-center">
@@ -55,13 +59,17 @@
         <xpath expr="//div[contains(@class, 'bg-view')]//div[contains(@class, 'payment-amount')]" position="before">
             <t t-if="line.payment_method_id.payment_method_type == 'transfer'">
                 <span t-if="line.seerbit_is_partially_matched" 
-                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center">
+                      class="badge bg-info text-dark ms-2 fs-6 fw-bold d-inline-flex align-items-center"
+                      style="cursor: pointer;"
+                      t-on-click.stop="() => this.openSeerbitModal(line)"
+                      title="Partially matched. Click to receive balance and match additional payments.">
                     <i class="fa fa-adjust me-1"/>Partially Matched
                     <t t-if="line.seerbit_matched_count and line.seerbit_matched_count &gt; 1">
                         <span class="badge rounded-pill bg-light text-dark ms-1 px-2 py-1" style="font-size: 0.75rem; border: 1px solid rgba(0,0,0,0.15);">
                             <t t-esc="line.seerbit_matched_count"/>
                         </span>
                     </t>
+                    <i class="fa fa-external-link ms-1 small" style="opacity: 0.7;"/>
                 </span>
                 <span t-elif="line.seerbit_va_transaction_id or line.seerbit_transaction_ref or line.seerbit_is_matched or line.payment_status == 'done'" 
                       class="badge bg-success ms-2 fs-6 fw-bold d-inline-flex align-items-center">
