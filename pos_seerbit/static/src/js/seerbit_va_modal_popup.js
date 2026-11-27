@@ -892,6 +892,7 @@ export class SeerbitVaModalPopup extends Component {
             return;
         }
         this._isFinishingSuccess = true;
+        const line = this.paymentLine;
 
         if (this.statusPoller) {
             clearInterval(this.statusPoller);
@@ -901,7 +902,6 @@ export class SeerbitVaModalPopup extends Component {
             clearInterval(this.successTimer);
             this.successTimer = null;
         }
-        const line = this.paymentLine;
         if (line) {
             line._seerbit_modal_open = false;
             delete line._seerbit_modal;
@@ -980,7 +980,6 @@ export class SeerbitVaModalPopup extends Component {
             clearInterval(this.successTimer);
             this.successTimer = null;
         }
-        const line = this.paymentLine;
         if (line) {
             line._seerbit_modal_open = false;
             delete line._seerbit_modal;
