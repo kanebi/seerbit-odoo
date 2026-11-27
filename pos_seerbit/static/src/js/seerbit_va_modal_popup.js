@@ -303,7 +303,14 @@ export class SeerbitVaModalPopup extends Component {
         } else {
             list = this.state.allPayments;
             if (this.state.selectedTillPmFilter !== null) {
-                list = list.filter((p) => p.till_pm_id === this.state.selectedTillPmFilter);
+                const f = this.state.selectedTillPmFilter;
+                list = list.filter((p) =>
+                    p.till_key === f ||
+                    p.till_pm_id === f ||
+                    String(p.till_pm_id) === String(f) ||
+                    p.till_config_id === f ||
+                    String(p.till_config_id) === String(f)
+                );
             }
         }
         if (!query) return list;

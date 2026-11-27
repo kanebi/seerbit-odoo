@@ -506,15 +506,21 @@ class SeerbitVaTransaction(models.Model):
         configs = self.env['pos.config'].sudo().search([('company_id', '=', company_id)])
         till_pms = []
         seen_pm_ids = set()
+        seen_keys = set()
 
         for cfg in configs:
             static_pms = cfg.payment_method_ids.filtered(
                 lambda m: m.payment_method_type == 'transfer' and m.seerbit_transfer_type == 'static' and m.seerbit_va_id
             )
             for pm in static_pms:
+                key = f"{cfg.id}_{pm.id}"
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
                 seen_pm_ids.add(pm.id)
                 till_pms.append({
                     'id': pm.id,
+                    'key': key,
                     'config_id': cfg.id,
                     'config_name': cfg.name,
                     'pm_name': pm.name,
@@ -532,8 +538,13 @@ class SeerbitVaTransaction(models.Model):
             ('id', 'not in', list(seen_pm_ids)),
         ])
         for pm in other_pms:
+            key = f"other_{pm.id}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             till_pms.append({
                 'id': pm.id,
+                'key': key,
                 'config_id': False,
                 'config_name': 'Company Static',
                 'pm_name': pm.name,
@@ -591,11 +602,13 @@ class SeerbitVaTransaction(models.Model):
             if till_info:
                 rec['till_pm_id'] = till_info['id']
                 rec['till_config_id'] = till_info['config_id']
+                rec['till_key'] = till_info.get('key') or f"{till_info['config_id']}_{till_info['id']}"
                 rec['till_label'] = till_info['label']
                 rec['is_current_till'] = till_info['is_current_till']
             else:
                 rec['till_pm_id'] = False
                 rec['till_config_id'] = False
+                rec['till_key'] = False
                 rec['till_label'] = "Other Till"
                 rec['is_current_till'] = False
 
