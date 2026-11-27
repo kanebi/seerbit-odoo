@@ -333,6 +333,18 @@ export class SeerbitVaModalPopup extends Component {
         this.state.selectedTillPmFilter = pmId;
     }
 
+    get selectedTillPmLabel() {
+        if (this.state.selectedTillPmFilter === null || this.state.selectedTillPmFilter === undefined) {
+            return "All Tills (All PMs)";
+        }
+        const found = (this.state.tillPms || []).find(
+            (tpm) => (tpm.key || tpm.id) === this.state.selectedTillPmFilter || tpm.id === this.state.selectedTillPmFilter
+        );
+        return found ? (found.label || (found.config_name + ": " + found.pm_name)) : "Selected Till PM";
+    }
+
+
+
     async fetchAllPayments() {
         this.state.loadingAllPayments = true;
         try {
